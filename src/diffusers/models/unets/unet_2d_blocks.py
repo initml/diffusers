@@ -131,10 +131,10 @@ def get_down_block(
             downsample_type=downsample_type,
         )
     elif down_block_type == "CrossAttnDownBlock2D":
-        if cross_attention_dim is None:
-            raise ValueError(
-                "cross_attention_dim must be specified for CrossAttnDownBlock2D"
-            )
+        # if cross_attention_dim is None:
+        #    raise ValueError(
+        #        "cross_attention_dim must be specified for CrossAttnDownBlock2D"
+        #    )
         return CrossAttnDownBlock2D(
             num_layers=num_layers,
             transformer_layers_per_block=transformer_layers_per_block,
@@ -331,10 +331,10 @@ def get_up_block(
             output_scale_factor=resnet_out_scale_factor,
         )
     elif up_block_type == "CrossAttnUpBlock2D":
-        if cross_attention_dim is None:
-            raise ValueError(
-                "cross_attention_dim must be specified for CrossAttnUpBlock2D"
-            )
+        # if cross_attention_dim is None:
+        #    raise ValueError(
+        #        "cross_attention_dim must be specified for CrossAttnUpBlock2D"
+        #    )
         return CrossAttnUpBlock2D(
             num_layers=num_layers,
             transformer_layers_per_block=transformer_layers_per_block,
