@@ -871,6 +871,8 @@ class CombinedTimestepVectorEmbeddings(nn.Module):
         timestep,
         hidden_dtype,
         vector_conditioning=None,
+        *args,
+        **kwargs,
     ):
         timesteps_proj = self.time_proj(timestep)
         timesteps_emb = self.timestep_embedder(
