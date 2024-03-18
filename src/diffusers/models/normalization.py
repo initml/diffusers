@@ -22,7 +22,11 @@ import torch.nn.functional as F
 
 from ..utils import is_torch_version
 from .activations import get_activation
-from .embeddings import CombinedTimestepLabelEmbeddings, PixArtAlphaCombinedTimestepSizeEmbeddings
+from .embeddings import (
+    CombinedTimestepLabelEmbeddings,
+    CombinedTimestepVectorEmbeddings,
+    PixArtAlphaCombinedTimestepSizeEmbeddings,
+)
 
 
 class AdaLayerNorm(nn.Module):
@@ -73,8 +77,12 @@ class AdaLayerNormZero(nn.Module):
         class_labels: torch.LongTensor,
         hidden_dtype: Optional[torch.dtype] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        emb = self.linear(self.silu(self.emb(timestep, class_labels, hidden_dtype=hidden_dtype)))
-        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = emb.chunk(6, dim=1)
+        emb = self.linear(
+            self.silu(self.emb(timestep, class_labels, hidden_dtype=hidden_dtype))
+        )
+        shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = emb.chunk(
+            6, dim=1
+        )
         x = self.norm(x) * (1 + scale_msa[:, None]) + shift_msa[:, None]
         return x, gate_msa, shift_mlp, scale_mlp, gate_mlp
 
@@ -90,11 +98,18 @@ class AdaLayerNormSingle(nn.Module):
         use_additional_conditions (`bool`): To use additional conditions for normalization or not.
     """
 
-    def __init__(self, embedding_dim: int, use_additional_conditions: bool = False):
+    def __init__(
+        self,
+        embedding_dim: int,
+        timesteps_embedding_num_channels: int = 256,
+        projection_class_embeddings_input_dim: int = None,
+    ):
         super().__init__()
 
-        self.emb = PixArtAlphaCombinedTimestepSizeEmbeddings(
-            embedding_dim, size_emb_dim=embedding_dim // 3, use_additional_conditions=use_additional_conditions
+        self.emb = CombinedTimestepVectorEmbeddings(
+            time_embed_dim=embedding_dim,
+            timesteps_embedding_num_channels=timesteps_embedding_num_channels,
+            projection_class_embeddings_input_dim=projection_class_embeddings_input_dim,
         )
 
         self.silu = nn.SiLU()
@@ -108,7 +123,12 @@ class AdaLayerNormSingle(nn.Module):
         hidden_dtype: Optional[torch.dtype] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         # No modulation happening here.
-        embedded_timestep = self.emb(timestep, **added_cond_kwargs, batch_size=batch_size, hidden_dtype=hidden_dtype)
+        embedded_timestep = self.emb(
+            timestep,
+            **added_cond_kwargs,
+            batch_size=batch_size,
+            hidden_dtype=hidden_dtype,
+        )
         return self.linear(self.silu(embedded_timestep)), embedded_timestep
 
 
@@ -125,7 +145,12 @@ class AdaGroupNorm(nn.Module):
     """
 
     def __init__(
-        self, embedding_dim: int, out_dim: int, num_groups: int, act_fn: Optional[str] = None, eps: float = 1e-5
+        self,
+        embedding_dim: int,
+        out_dim: int,
+        num_groups: int,
+        act_fn: Optional[str] = None,
+        eps: float = 1e-5,
     ):
         super().__init__()
         self.num_groups = num_groups
@@ -167,7 +192,9 @@ class AdaLayerNormContinuous(nn.Module):
     ):
         super().__init__()
         self.silu = nn.SiLU()
-        self.linear = nn.Linear(conditioning_embedding_dim, embedding_dim * 2, bias=bias)
+        self.linear = nn.Linear(
+            conditioning_embedding_dim, embedding_dim * 2, bias=bias
+        )
         if norm_type == "layer_norm":
             self.norm = LayerNorm(embedding_dim, eps, elementwise_affine, bias)
         elif norm_type == "rms_norm":
@@ -175,7 +202,9 @@ class AdaLayerNormContinuous(nn.Module):
         else:
             raise ValueError(f"unknown norm_type {norm_type}")
 
-    def forward(self, x: torch.Tensor, conditioning_embedding: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, conditioning_embedding: torch.Tensor
+    ) -> torch.Tensor:
         emb = self.linear(self.silu(conditioning_embedding))
         scale, shift = torch.chunk(emb, 2, dim=1)
         x = self.norm(x) * (1 + scale)[:, None, :] + shift[:, None, :]
@@ -188,7 +217,13 @@ else:
     # Has optional bias parameter compared to torch layer norm
     # TODO: replace with torch layernorm once min required torch version >= 2.1
     class LayerNorm(nn.Module):
-        def __init__(self, dim, eps: float = 1e-5, elementwise_affine: bool = True, bias: bool = True):
+        def __init__(
+            self,
+            dim,
+            eps: float = 1e-5,
+            elementwise_affine: bool = True,
+            bias: bool = True,
+        ):
             super().__init__()
 
             self.eps = eps
