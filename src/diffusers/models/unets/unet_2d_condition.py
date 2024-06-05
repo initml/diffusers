@@ -1179,7 +1179,8 @@ class UNet2DConditionModel(
         down_intrablock_additional_residuals: Optional[Tuple[torch.Tensor]] = None,
         encoder_attention_mask: Optional[torch.Tensor] = None,
         return_dict: bool = True,
-        return_intermediate: bool = False,
+        return_post_down_blocks: bool = False,
+        return_post_mid_block: bool = False,
     ) -> Union[UNet2DConditionOutput, Tuple]:
         r"""
         The [`UNet2DConditionModel`] forward method.
@@ -1219,6 +1220,10 @@ class UNet2DConditionModel(
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether or not to return a [`~models.unets.unet_2d_condition.UNet2DConditionOutput`] instead of a plain
                 tuple.
+            return_post_down_blocks (`bool`, *optional*, defaults to `False`):
+                Whether or not to return the post-down blocks output.
+            return_post_mid_block (`bool`, *optional*, defaults to `False`):
+                Whether or not to return the post-middle block output.
 
         Returns:
             [`~models.unets.unet_2d_condition.UNet2DConditionOutput`] or `tuple`:
@@ -1395,6 +1400,11 @@ class UNet2DConditionModel(
 
             down_block_res_samples = new_down_block_res_samples
 
+        if return_post_down_blocks:
+            if not return_dict:
+                return (sample,)
+            return UNet2DConditionOutput(sample=sample)
+
         # 4. mid
         if self.mid_block is not None:
             if (
@@ -1420,13 +1430,13 @@ class UNet2DConditionModel(
             ):
                 sample += down_intrablock_additional_residuals.pop(0)
 
-            if return_intermediate:
-                if not return_dict:
-                    return (sample,)
-                return UNet2DConditionOutput(sample=sample)
-
         if is_controlnet:
             sample = sample + mid_block_additional_residual
+
+        if return_post_mid_block:
+            if not return_dict:
+                return (sample,)
+            return UNet2DConditionOutput(sample=sample)
 
         # 5. up
         for i, upsample_block in enumerate(self.up_blocks):
