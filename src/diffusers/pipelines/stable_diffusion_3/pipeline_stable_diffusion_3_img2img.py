@@ -591,6 +591,8 @@ class StableDiffusion3Img2ImgPipeline(DiffusionPipeline):
             )
 
         image = image.to(device=device, dtype=dtype)
+        if image.shape[1] == self.vae.config.latent_channels:
+            init_latents = image
 
         batch_size = batch_size * num_images_per_prompt
         if image.shape[1] == self.vae.config.latent_channels:
@@ -668,7 +670,7 @@ class StableDiffusion3Img2ImgPipeline(DiffusionPipeline):
         strength: float = 0.6,
         num_inference_steps: int = 50,
         timesteps: List[int] = None,
-        guidance_scale: float = 5.0,
+        guidance_scale: float = 7.0,
         negative_prompt: Optional[Union[str, List[str]]] = None,
         negative_prompt_2: Optional[Union[str, List[str]]] = None,
         negative_prompt_3: Optional[Union[str, List[str]]] = None,

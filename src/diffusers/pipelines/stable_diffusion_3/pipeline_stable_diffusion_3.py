@@ -198,7 +198,7 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
         self.default_sample_size = (
             self.transformer.config.sample_size
             if hasattr(self, "transformer") and self.transformer is not None
-            else 64
+            else 128
         )
 
     def _get_t5_prompt_embeds(
@@ -624,9 +624,9 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
         prompt_3: Optional[Union[str, List[str]]] = None,
         height: Optional[int] = None,
         width: Optional[int] = None,
-        num_inference_steps: int = 50,
+        num_inference_steps: int = 28,
         timesteps: List[int] = None,
-        guidance_scale: float = 5.0,
+        guidance_scale: float = 7.0,
         negative_prompt: Optional[Union[str, List[str]]] = None,
         negative_prompt_2: Optional[Union[str, List[str]]] = None,
         negative_prompt_3: Optional[Union[str, List[str]]] = None,
