@@ -28,15 +28,10 @@ from ...loaders import SD3LoraLoaderMixin
 from ...models.autoencoders import AutoencoderKL
 from ...models.transformers import SD3Transformer2DModel
 from ...schedulers import FlowMatchEulerDiscreteScheduler
-from ...utils import (
-    is_torch_xla_available,
-    logging,
-    replace_example_docstring,
-)
+from ...utils import is_torch_xla_available, logging, replace_example_docstring
 from ...utils.torch_utils import randn_tensor
 from ..pipeline_utils import DiffusionPipeline
 from .pipeline_output import StableDiffusion3PipelineOutput
-
 
 if is_torch_xla_available():
     import torch_xla.core.xla_model as xm
@@ -98,9 +93,13 @@ def retrieve_timesteps(
         second element is the number of inference steps.
     """
     if timesteps is not None and sigmas is not None:
-        raise ValueError("Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values")
+        raise ValueError(
+            "Only one of `timesteps` or `sigmas` can be passed. Please choose one to set custom values"
+        )
     if timesteps is not None:
-        accepts_timesteps = "timesteps" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+        accepts_timesteps = "timesteps" in set(
+            inspect.signature(scheduler.set_timesteps).parameters.keys()
+        )
         if not accepts_timesteps:
             raise ValueError(
                 f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
@@ -110,7 +109,9 @@ def retrieve_timesteps(
         timesteps = scheduler.timesteps
         num_inference_steps = len(timesteps)
     elif sigmas is not None:
-        accept_sigmas = "sigmas" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+        accept_sigmas = "sigmas" in set(
+            inspect.signature(scheduler.set_timesteps).parameters.keys()
+        )
         if not accept_sigmas:
             raise ValueError(
                 f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
@@ -159,9 +160,16 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
             [T5Tokenizer](https://huggingface.co/docs/transformers/model_doc/t5#transformers.T5Tokenizer).
     """
 
-    model_cpu_offload_seq = "text_encoder->text_encoder_2->text_encoder_3->transformer->vae"
+    model_cpu_offload_seq = (
+        "text_encoder->text_encoder_2->text_encoder_3->transformer->vae"
+    )
     _optional_components = []
-    _callback_tensor_inputs = ["latents", "prompt_embeds", "negative_prompt_embeds", "negative_pooled_prompt_embeds"]
+    _callback_tensor_inputs = [
+        "latents",
+        "prompt_embeds",
+        "negative_prompt_embeds",
+        "negative_pooled_prompt_embeds",
+    ]
 
     def __init__(
         self,
@@ -189,11 +197,15 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
             scheduler=scheduler,
         )
         self.vae_scale_factor = (
-            2 ** (len(self.vae.config.block_out_channels) - 1) if hasattr(self, "vae") and self.vae is not None else 8
+            2 ** (len(self.vae.config.block_out_channels) - 1)
+            if hasattr(self, "vae") and self.vae is not None
+            else 8
         )
         self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor)
         self.tokenizer_max_length = (
-            self.tokenizer.model_max_length if hasattr(self, "tokenizer") and self.tokenizer is not None else 77
+            self.tokenizer.model_max_length
+            if hasattr(self, "tokenizer") and self.tokenizer is not None
+            else 77
         )
         self.default_sample_size = (
             self.transformer.config.sample_size
@@ -216,7 +228,11 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
 
         if self.text_encoder_3 is None:
             return torch.zeros(
-                (batch_size, self.tokenizer_max_length, self.transformer.config.joint_attention_dim),
+                (
+                    batch_size,
+                    self.tokenizer_max_length,
+                    4096,
+                ),
                 device=device,
                 dtype=dtype,
             )
@@ -230,10 +246,16 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
             return_tensors="pt",
         )
         text_input_ids = text_inputs.input_ids
-        untruncated_ids = self.tokenizer_3(prompt, padding="longest", return_tensors="pt").input_ids
+        untruncated_ids = self.tokenizer_3(
+            prompt, padding="longest", return_tensors="pt"
+        ).input_ids
 
-        if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(text_input_ids, untruncated_ids):
-            removed_text = self.tokenizer_3.batch_decode(untruncated_ids[:, self.tokenizer_max_length - 1 : -1])
+        if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(
+            text_input_ids, untruncated_ids
+        ):
+            removed_text = self.tokenizer_3.batch_decode(
+                untruncated_ids[:, self.tokenizer_max_length - 1 : -1]
+            )
             logger.warning(
                 "The following part of your input was truncated because CLIP can only handle sequences up to"
                 f" {self.tokenizer_max_length} tokens: {removed_text}"
@@ -248,7 +270,9 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
 
         # duplicate text embeddings and attention mask for each generation per prompt, using mps friendly method
         prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
-        prompt_embeds = prompt_embeds.view(batch_size * num_images_per_prompt, seq_len, -1)
+        prompt_embeds = prompt_embeds.view(
+            batch_size * num_images_per_prompt, seq_len, -1
+        )
 
         return prompt_embeds
 
@@ -280,14 +304,22 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
         )
 
         text_input_ids = text_inputs.input_ids
-        untruncated_ids = tokenizer(prompt, padding="longest", return_tensors="pt").input_ids
-        if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(text_input_ids, untruncated_ids):
-            removed_text = tokenizer.batch_decode(untruncated_ids[:, self.tokenizer_max_length - 1 : -1])
+        untruncated_ids = tokenizer(
+            prompt, padding="longest", return_tensors="pt"
+        ).input_ids
+        if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(
+            text_input_ids, untruncated_ids
+        ):
+            removed_text = tokenizer.batch_decode(
+                untruncated_ids[:, self.tokenizer_max_length - 1 : -1]
+            )
             logger.warning(
                 "The following part of your input was truncated because CLIP can only handle sequences up to"
                 f" {self.tokenizer_max_length} tokens: {removed_text}"
             )
-        prompt_embeds = text_encoder(text_input_ids.to(device), output_hidden_states=True)
+        prompt_embeds = text_encoder(
+            text_input_ids.to(device), output_hidden_states=True
+        )
         pooled_prompt_embeds = prompt_embeds[0]
 
         if clip_skip is None:
@@ -300,10 +332,14 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
         _, seq_len, _ = prompt_embeds.shape
         # duplicate text embeddings for each generation per prompt, using mps friendly method
         prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
-        prompt_embeds = prompt_embeds.view(batch_size * num_images_per_prompt, seq_len, -1)
+        prompt_embeds = prompt_embeds.view(
+            batch_size * num_images_per_prompt, seq_len, -1
+        )
 
         pooled_prompt_embeds = pooled_prompt_embeds.repeat(1, num_images_per_prompt, 1)
-        pooled_prompt_embeds = pooled_prompt_embeds.view(batch_size * num_images_per_prompt, -1)
+        pooled_prompt_embeds = pooled_prompt_embeds.view(
+            batch_size * num_images_per_prompt, -1
+        )
 
         return prompt_embeds, pooled_prompt_embeds
 
@@ -407,11 +443,14 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
             )
 
             clip_prompt_embeds = torch.nn.functional.pad(
-                clip_prompt_embeds, (0, t5_prompt_embed.shape[-1] - clip_prompt_embeds.shape[-1])
+                clip_prompt_embeds,
+                (0, t5_prompt_embed.shape[-1] - clip_prompt_embeds.shape[-1]),
             )
 
             prompt_embeds = torch.cat([clip_prompt_embeds, t5_prompt_embed], dim=-2)
-            pooled_prompt_embeds = torch.cat([pooled_prompt_embed, pooled_prompt_2_embed], dim=-1)
+            pooled_prompt_embeds = torch.cat(
+                [pooled_prompt_embed, pooled_prompt_2_embed], dim=-1
+            )
 
         if do_classifier_free_guidance and negative_prompt_embeds is None:
             negative_prompt = negative_prompt or ""
@@ -419,12 +458,20 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
             negative_prompt_3 = negative_prompt_3 or negative_prompt
 
             # normalize str to list
-            negative_prompt = batch_size * [negative_prompt] if isinstance(negative_prompt, str) else negative_prompt
+            negative_prompt = (
+                batch_size * [negative_prompt]
+                if isinstance(negative_prompt, str)
+                else negative_prompt
+            )
             negative_prompt_2 = (
-                batch_size * [negative_prompt_2] if isinstance(negative_prompt_2, str) else negative_prompt_2
+                batch_size * [negative_prompt_2]
+                if isinstance(negative_prompt_2, str)
+                else negative_prompt_2
             )
             negative_prompt_3 = (
-                batch_size * [negative_prompt_3] if isinstance(negative_prompt_3, str) else negative_prompt_3
+                batch_size * [negative_prompt_3]
+                if isinstance(negative_prompt_3, str)
+                else negative_prompt_3
             )
 
             if prompt is not None and type(prompt) is not type(negative_prompt):
@@ -439,37 +486,56 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                     " the batch size of `prompt`."
                 )
 
-            negative_prompt_embed, negative_pooled_prompt_embed = self._get_clip_prompt_embeds(
-                negative_prompt,
-                device=device,
-                num_images_per_prompt=num_images_per_prompt,
-                clip_skip=None,
-                clip_model_index=0,
+            negative_prompt_embed, negative_pooled_prompt_embed = (
+                self._get_clip_prompt_embeds(
+                    negative_prompt,
+                    device=device,
+                    num_images_per_prompt=num_images_per_prompt,
+                    clip_skip=None,
+                    clip_model_index=0,
+                )
             )
-            negative_prompt_2_embed, negative_pooled_prompt_2_embed = self._get_clip_prompt_embeds(
-                negative_prompt_2,
-                device=device,
-                num_images_per_prompt=num_images_per_prompt,
-                clip_skip=None,
-                clip_model_index=1,
+            negative_prompt_2_embed, negative_pooled_prompt_2_embed = (
+                self._get_clip_prompt_embeds(
+                    negative_prompt_2,
+                    device=device,
+                    num_images_per_prompt=num_images_per_prompt,
+                    clip_skip=None,
+                    clip_model_index=1,
+                )
             )
-            negative_clip_prompt_embeds = torch.cat([negative_prompt_embed, negative_prompt_2_embed], dim=-1)
+            negative_clip_prompt_embeds = torch.cat(
+                [negative_prompt_embed, negative_prompt_2_embed], dim=-1
+            )
 
             t5_negative_prompt_embed = self._get_t5_prompt_embeds(
-                prompt=negative_prompt_3, num_images_per_prompt=num_images_per_prompt, device=device
+                prompt=negative_prompt_3,
+                num_images_per_prompt=num_images_per_prompt,
+                device=device,
             )
 
             negative_clip_prompt_embeds = torch.nn.functional.pad(
                 negative_clip_prompt_embeds,
-                (0, t5_negative_prompt_embed.shape[-1] - negative_clip_prompt_embeds.shape[-1]),
+                (
+                    0,
+                    t5_negative_prompt_embed.shape[-1]
+                    - negative_clip_prompt_embeds.shape[-1],
+                ),
             )
 
-            negative_prompt_embeds = torch.cat([negative_clip_prompt_embeds, t5_negative_prompt_embed], dim=-2)
+            negative_prompt_embeds = torch.cat(
+                [negative_clip_prompt_embeds, t5_negative_prompt_embed], dim=-2
+            )
             negative_pooled_prompt_embeds = torch.cat(
                 [negative_pooled_prompt_embed, negative_pooled_prompt_2_embed], dim=-1
             )
 
-        return prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds
+        return (
+            prompt_embeds,
+            negative_prompt_embeds,
+            pooled_prompt_embeds,
+            negative_pooled_prompt_embeds,
+        )
 
     def check_inputs(
         self,
@@ -488,10 +554,13 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
         callback_on_step_end_tensor_inputs=None,
     ):
         if height % 8 != 0 or width % 8 != 0:
-            raise ValueError(f"`height` and `width` have to be divisible by 8 but are {height} and {width}.")
+            raise ValueError(
+                f"`height` and `width` have to be divisible by 8 but are {height} and {width}."
+            )
 
         if callback_on_step_end_tensor_inputs is not None and not all(
-            k in self._callback_tensor_inputs for k in callback_on_step_end_tensor_inputs
+            k in self._callback_tensor_inputs
+            for k in callback_on_step_end_tensor_inputs
         ):
             raise ValueError(
                 f"`callback_on_step_end_tensor_inputs` has to be in {self._callback_tensor_inputs}, but found {[k for k in callback_on_step_end_tensor_inputs if k not in self._callback_tensor_inputs]}"
@@ -516,12 +585,24 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
             raise ValueError(
                 "Provide either `prompt` or `prompt_embeds`. Cannot leave both `prompt` and `prompt_embeds` undefined."
             )
-        elif prompt is not None and (not isinstance(prompt, str) and not isinstance(prompt, list)):
-            raise ValueError(f"`prompt` has to be of type `str` or `list` but is {type(prompt)}")
-        elif prompt_2 is not None and (not isinstance(prompt_2, str) and not isinstance(prompt_2, list)):
-            raise ValueError(f"`prompt_2` has to be of type `str` or `list` but is {type(prompt_2)}")
-        elif prompt_3 is not None and (not isinstance(prompt_3, str) and not isinstance(prompt_3, list)):
-            raise ValueError(f"`prompt_3` has to be of type `str` or `list` but is {type(prompt_3)}")
+        elif prompt is not None and (
+            not isinstance(prompt, str) and not isinstance(prompt, list)
+        ):
+            raise ValueError(
+                f"`prompt` has to be of type `str` or `list` but is {type(prompt)}"
+            )
+        elif prompt_2 is not None and (
+            not isinstance(prompt_2, str) and not isinstance(prompt_2, list)
+        ):
+            raise ValueError(
+                f"`prompt_2` has to be of type `str` or `list` but is {type(prompt_2)}"
+            )
+        elif prompt_3 is not None and (
+            not isinstance(prompt_3, str) and not isinstance(prompt_3, list)
+        ):
+            raise ValueError(
+                f"`prompt_3` has to be of type `str` or `list` but is {type(prompt_3)}"
+            )
 
         if negative_prompt is not None and negative_prompt_embeds is not None:
             raise ValueError(
@@ -794,11 +875,17 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
 
         if self.do_classifier_free_guidance:
             prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
-            pooled_prompt_embeds = torch.cat([negative_pooled_prompt_embeds, pooled_prompt_embeds], dim=0)
+            pooled_prompt_embeds = torch.cat(
+                [negative_pooled_prompt_embeds, pooled_prompt_embeds], dim=0
+            )
 
         # 4. Prepare timesteps
-        timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
-        num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
+        timesteps, num_inference_steps = retrieve_timesteps(
+            self.scheduler, num_inference_steps, device, timesteps
+        )
+        num_warmup_steps = max(
+            len(timesteps) - num_inference_steps * self.scheduler.order, 0
+        )
         self._num_timesteps = len(timesteps)
 
         # 5. Prepare latent variables
@@ -821,7 +908,11 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                     continue
 
                 # expand the latents if we are doing classifier free guidance
-                latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
+                latent_model_input = (
+                    torch.cat([latents] * 2)
+                    if self.do_classifier_free_guidance
+                    else latents
+                )
                 # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
                 timestep = t.expand(latent_model_input.shape[0])
 
@@ -837,11 +928,15 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                 # perform guidance
                 if self.do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                    noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+                    noise_pred = noise_pred_uncond + self.guidance_scale * (
+                        noise_pred_text - noise_pred_uncond
+                    )
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
-                latents = self.scheduler.step(noise_pred, t, latents, return_dict=False)[0]
+                latents = self.scheduler.step(
+                    noise_pred, t, latents, return_dict=False
+                )[0]
 
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
@@ -856,13 +951,17 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
 
                     latents = callback_outputs.pop("latents", latents)
                     prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
-                    negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
+                    negative_prompt_embeds = callback_outputs.pop(
+                        "negative_prompt_embeds", negative_prompt_embeds
+                    )
                     negative_pooled_prompt_embeds = callback_outputs.pop(
                         "negative_pooled_prompt_embeds", negative_pooled_prompt_embeds
                     )
 
                 # call the callback, if provided
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                if i == len(timesteps) - 1 or (
+                    (i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0
+                ):
                     progress_bar.update()
 
                 if XLA_AVAILABLE:
@@ -872,7 +971,9 @@ class StableDiffusion3Pipeline(DiffusionPipeline, SD3LoraLoaderMixin):
             image = latents
 
         else:
-            latents = (latents / self.vae.config.scaling_factor) + self.vae.config.shift_factor
+            latents = (
+                latents / self.vae.config.scaling_factor
+            ) + self.vae.config.shift_factor
 
             image = self.vae.decode(latents, return_dict=False)[0]
             image = self.image_processor.postprocess(image, output_type=output_type)
