@@ -20,6 +20,7 @@ import torch.utils.checkpoint
 
 from ...configuration_utils import ConfigMixin, register_to_config
 from ...loaders import PeftAdapterMixin, UNet2DConditionLoadersMixin
+from ...loaders.single_file_model import FromOriginalModelMixin
 from ...utils import (
     USE_PEFT_BACKEND,
     BaseOutput,
@@ -61,15 +62,19 @@ class UNet2DConditionOutput(BaseOutput):
     The output of [`UNet2DConditionModel`].
 
     Args:
-        sample (`torch.FloatTensor` of shape `(batch_size, num_channels, height, width)`):
+        sample (`torch.Tensor` of shape `(batch_size, num_channels, height, width)`):
             The hidden states output conditioned on `encoder_hidden_states` input. Output of last layer of model.
     """
 
-    sample: torch.FloatTensor = None
+    sample: torch.Tensor = None
 
 
 class UNet2DConditionModel(
-    ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin, PeftAdapterMixin
+    ModelMixin,
+    ConfigMixin,
+    FromOriginalModelMixin,
+    UNet2DConditionLoadersMixin,
+    PeftAdapterMixin,
 ):
     r"""
     A conditional 2D UNet model that takes a noisy sample, conditional state, and a timestep and returns a sample
@@ -111,13 +116,13 @@ class UNet2DConditionModel(
             The dimension of the cross attention features.
         transformer_layers_per_block (`int`, `Tuple[int]`, or `Tuple[Tuple]` , *optional*, defaults to 1):
             The number of transformer blocks of type [`~models.attention.BasicTransformerBlock`]. Only relevant for
-            [`~models.unet_2d_blocks.CrossAttnDownBlock2D`], [`~models.unet_2d_blocks.CrossAttnUpBlock2D`],
-            [`~models.unet_2d_blocks.UNetMidBlock2DCrossAttn`].
+            [`~models.unets.unet_2d_blocks.CrossAttnDownBlock2D`], [`~models.unets.unet_2d_blocks.CrossAttnUpBlock2D`],
+            [`~models.unets.unet_2d_blocks.UNetMidBlock2DCrossAttn`].
         reverse_transformer_layers_per_block : (`Tuple[Tuple]`, *optional*, defaults to None):
             The number of transformer blocks of type [`~models.attention.BasicTransformerBlock`], in the upsampling
             blocks of the U-Net. Only relevant if `transformer_layers_per_block` is of type `Tuple[Tuple]` and for
-            [`~models.unet_2d_blocks.CrossAttnDownBlock2D`], [`~models.unet_2d_blocks.CrossAttnUpBlock2D`],
-            [`~models.unet_2d_blocks.UNetMidBlock2DCrossAttn`].
+            [`~models.unets.unet_2d_blocks.CrossAttnDownBlock2D`], [`~models.unets.unet_2d_blocks.CrossAttnUpBlock2D`],
+            [`~models.unets.unet_2d_blocks.UNetMidBlock2DCrossAttn`].
         encoder_hid_dim (`int`, *optional*, defaults to None):
             If `encoder_hid_dim_type` is defined, `encoder_hidden_states` will be projected from `encoder_hid_dim`
             dimension to `cross_attention_dim`.
@@ -165,6 +170,7 @@ class UNet2DConditionModel(
     """
 
     _supports_gradient_checkpointing = True
+    _no_split_modules = ["BasicTransformerBlock", "ResnetBlock2D", "CrossAttnUpBlock2D"]
 
     @register_to_config
     def __init__(
@@ -756,9 +762,7 @@ class UNet2DConditionModel(
             positive_len = 768
             if isinstance(cross_attention_dim, int):
                 positive_len = cross_attention_dim
-            elif isinstance(cross_attention_dim, tuple) or isinstance(
-                cross_attention_dim, list
-            ):
+            elif isinstance(cross_attention_dim, (list, tuple)):
                 positive_len = cross_attention_dim[0]
 
             feature_type = "text-only" if attention_type == "gated" else "text-image"
@@ -1003,17 +1007,6 @@ class UNet2DConditionModel(
         if self.original_attn_processors is not None:
             self.set_attn_processor(self.original_attn_processors)
 
-    def unload_lora(self):
-        """Unloads LoRA weights."""
-        deprecate(
-            "unload_lora",
-            "0.28.0",
-            "Calling `unload_lora()` is deprecated and will be removed in a future version. Please install `peft` and then call `disable_adapters().",
-        )
-        for module in self.modules():
-            if hasattr(module, "set_lora_layer"):
-                module.set_lora_layer(None)
-
     def get_time_embed(
         self, sample: torch.Tensor, timestep: Union[torch.Tensor, float, int]
     ) -> Optional[torch.Tensor]:
@@ -1166,7 +1159,7 @@ class UNet2DConditionModel(
 
     def forward(
         self,
-        sample: torch.FloatTensor,
+        sample: torch.Tensor,
         timestep: Union[torch.Tensor, float, int],
         encoder_hidden_states: torch.Tensor,
         class_labels: Optional[torch.Tensor] = None,
@@ -1185,10 +1178,10 @@ class UNet2DConditionModel(
         The [`UNet2DConditionModel`] forward method.
 
         Args:
-            sample (`torch.FloatTensor`):
+            sample (`torch.Tensor`):
                 The noisy input tensor with the following shape `(batch, channel, height, width)`.
-            timestep (`torch.FloatTensor` or `float` or `int`): The number of timesteps to denoise an input.
-            encoder_hidden_states (`torch.FloatTensor`):
+            timestep (`torch.Tensor` or `float` or `int`): The number of timesteps to denoise an input.
+            encoder_hidden_states (`torch.Tensor`):
                 The encoder hidden states with shape `(batch, sequence_length, feature_dim)`.
             class_labels (`torch.Tensor`, *optional*, defaults to `None`):
                 Optional class labels for conditioning. Their embeddings will be summed with the timestep embeddings.
@@ -1219,6 +1212,22 @@ class UNet2DConditionModel(
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether or not to return a [`~models.unets.unet_2d_condition.UNet2DConditionOutput`] instead of a plain
                 tuple.
+            cross_attention_kwargs (`dict`, *optional*):
+                A kwargs dictionary that if specified is passed along to the [`AttnProcessor`].
+            added_cond_kwargs: (`dict`, *optional*):
+                A kwargs dictionary containin additional embeddings that if specified are added to the embeddings that
+                are passed along to the UNet blocks.
+            down_block_additional_residuals (`tuple` of `torch.Tensor`, *optional*):
+                additional residuals to be added to UNet long skip connections from down blocks to up blocks for
+                example from ControlNet side model(s)
+            mid_block_additional_residual (`torch.Tensor`, *optional*):
+                additional residual to be added to UNet mid block output, for example from ControlNet side model
+            down_intrablock_additional_residuals (`tuple` of `torch.Tensor`, *optional*):
+                additional residuals to be added within UNet down blocks, for example from T2I-Adapter side model(s)
+            return_post_down_blocks (`bool`, *optional*, defaults to `False`):
+                Whether or not to return the post down blocks.
+            return_post_mid_blocks (`bool`, *optional*, defaults to `False`):
+                Whether or not to return the post mid blocks.
 
         Returns:
             [`~models.unets.unet_2d_condition.UNet2DConditionOutput`] or `tuple`:
@@ -1395,6 +1404,8 @@ class UNet2DConditionModel(
 
             down_block_res_samples = new_down_block_res_samples
 
+            return UNet2DConditionOutput(sample=sample)
+
         # 4. mid
         if self.mid_block is not None:
             if (
@@ -1427,6 +1438,8 @@ class UNet2DConditionModel(
 
         if is_controlnet:
             sample = sample + mid_block_additional_residual
+
+            return UNet2DConditionOutput(sample=sample)
 
         # 5. up
         for i, upsample_block in enumerate(self.up_blocks):

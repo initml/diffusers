@@ -1,4 +1,4 @@
-__version__ = "0.28.0.dev0"
+__version__ = "0.29.0.dev0"
 
 from typing import TYPE_CHECKING
 
@@ -17,7 +17,6 @@ from .utils import (
     is_transformers_available,
 )
 
-
 # Lazy Import based on
 # https://github.com/huggingface/transformers/blob/main/src/transformers/__init__.py
 
@@ -27,6 +26,7 @@ from .utils import (
 
 _import_structure = {
     "configuration_utils": ["ConfigMixin"],
+    "loaders": ["FromOriginalModelMixin"],
     "models": [],
     "pipelines": [],
     "schedulers": [],
@@ -69,7 +69,9 @@ try:
 except OptionalDependencyNotAvailable:
     from .utils import dummy_pt_objects  # noqa F403
 
-    _import_structure["utils.dummy_pt_objects"] = [name for name in dir(dummy_pt_objects) if not name.startswith("_")]
+    _import_structure["utils.dummy_pt_objects"] = [
+        name for name in dir(dummy_pt_objects) if not name.startswith("_")
+    ]
 
 else:
     _import_structure["models"].extend(
@@ -81,12 +83,16 @@ else:
             "ConsistencyDecoderVAE",
             "ControlNetModel",
             "ControlNetXSAdapter",
+            "DiTTransformer2DModel",
+            "HunyuanDiT2DModel",
             "I2VGenXLUNet",
             "Kandinsky3UNet",
             "ModelMixin",
             "MotionAdapter",
             "MultiAdapter",
+            "PixArtTransformer2DModel",
             "PriorTransformer",
+            "SD3Transformer2DModel",
             "StableCascadeUNet",
             "T2IAdapter",
             "T5FilmDecoder",
@@ -152,6 +158,8 @@ else:
             "EDMEulerScheduler",
             "EulerAncestralDiscreteScheduler",
             "EulerDiscreteScheduler",
+            "FlowMatchEulerDiscreteScheduler",
+            "FlashFlowMatchEulerDiscreteScheduler",
             "HeunDiscreteScheduler",
             "IPNDMScheduler",
             "KarrasVeScheduler",
@@ -191,7 +199,9 @@ except OptionalDependencyNotAvailable:
     from .utils import dummy_torch_and_torchsde_objects  # noqa F403
 
     _import_structure["utils.dummy_torch_and_torchsde_objects"] = [
-        name for name in dir(dummy_torch_and_torchsde_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_torch_and_torchsde_objects)
+        if not name.startswith("_")
     ]
 
 else:
@@ -204,7 +214,9 @@ except OptionalDependencyNotAvailable:
     from .utils import dummy_torch_and_transformers_objects  # noqa F403
 
     _import_structure["utils.dummy_torch_and_transformers_objects"] = [
-        name for name in dir(dummy_torch_and_transformers_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_torch_and_transformers_objects)
+        if not name.startswith("_")
     ]
 
 else:
@@ -216,6 +228,7 @@ else:
             "AmusedInpaintPipeline",
             "AmusedPipeline",
             "AnimateDiffPipeline",
+            "AnimateDiffSDXLPipeline",
             "AnimateDiffVideoToVideoPipeline",
             "AudioLDM2Pipeline",
             "AudioLDM2ProjectionModel",
@@ -225,6 +238,7 @@ else:
             "BlipDiffusionPipeline",
             "CLIPImageProjection",
             "CycleDiffusionPipeline",
+            "HunyuanDiTPipeline",
             "I2VGenXLPipeline",
             "IFImg2ImgPipeline",
             "IFImg2ImgSuperResolutionPipeline",
@@ -257,16 +271,21 @@ else:
             "LDMTextToImagePipeline",
             "LEditsPPPipelineStableDiffusion",
             "LEditsPPPipelineStableDiffusionXL",
+            "MarigoldDepthPipeline",
+            "MarigoldNormalsPipeline",
             "MusicLDMPipeline",
             "PaintByExamplePipeline",
             "PIAPipeline",
             "PixArtAlphaPipeline",
+            "PixArtSigmaPipeline",
             "SemanticStableDiffusionPipeline",
             "ShapEImg2ImgPipeline",
             "ShapEPipeline",
             "StableCascadeCombinedPipeline",
             "StableCascadeDecoderPipeline",
             "StableCascadePriorPipeline",
+            "StableDiffusion3Img2ImgPipeline",
+            "StableDiffusion3Pipeline",
             "StableDiffusionAdapterPipeline",
             "StableDiffusionAttendAndExcitePipeline",
             "StableDiffusionControlNetImg2ImgPipeline",
@@ -325,26 +344,38 @@ else:
     )
 
 try:
-    if not (is_torch_available() and is_transformers_available() and is_k_diffusion_available()):
+    if not (
+        is_torch_available()
+        and is_transformers_available()
+        and is_k_diffusion_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from .utils import dummy_torch_and_transformers_and_k_diffusion_objects  # noqa F403
 
     _import_structure["utils.dummy_torch_and_transformers_and_k_diffusion_objects"] = [
-        name for name in dir(dummy_torch_and_transformers_and_k_diffusion_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_torch_and_transformers_and_k_diffusion_objects)
+        if not name.startswith("_")
     ]
 
 else:
-    _import_structure["pipelines"].extend(["StableDiffusionKDiffusionPipeline", "StableDiffusionXLKDiffusionPipeline"])
+    _import_structure["pipelines"].extend(
+        ["StableDiffusionKDiffusionPipeline", "StableDiffusionXLKDiffusionPipeline"]
+    )
 
 try:
-    if not (is_torch_available() and is_transformers_available() and is_onnx_available()):
+    if not (
+        is_torch_available() and is_transformers_available() and is_onnx_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from .utils import dummy_torch_and_transformers_and_onnx_objects  # noqa F403
 
     _import_structure["utils.dummy_torch_and_transformers_and_onnx_objects"] = [
-        name for name in dir(dummy_torch_and_transformers_and_onnx_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_torch_and_transformers_and_onnx_objects)
+        if not name.startswith("_")
     ]
 
 else:
@@ -366,20 +397,26 @@ except OptionalDependencyNotAvailable:
     from .utils import dummy_torch_and_librosa_objects  # noqa F403
 
     _import_structure["utils.dummy_torch_and_librosa_objects"] = [
-        name for name in dir(dummy_torch_and_librosa_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_torch_and_librosa_objects)
+        if not name.startswith("_")
     ]
 
 else:
     _import_structure["pipelines"].extend(["AudioDiffusionPipeline", "Mel"])
 
 try:
-    if not (is_transformers_available() and is_torch_available() and is_note_seq_available()):
+    if not (
+        is_transformers_available() and is_torch_available() and is_note_seq_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from .utils import dummy_transformers_and_torch_and_note_seq_objects  # noqa F403
 
     _import_structure["utils.dummy_transformers_and_torch_and_note_seq_objects"] = [
-        name for name in dir(dummy_transformers_and_torch_and_note_seq_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_transformers_and_torch_and_note_seq_objects)
+        if not name.startswith("_")
     ]
 
 
@@ -400,7 +437,9 @@ except OptionalDependencyNotAvailable:
 else:
     _import_structure["models.controlnet_flax"] = ["FlaxControlNetModel"]
     _import_structure["models.modeling_flax_utils"] = ["FlaxModelMixin"]
-    _import_structure["models.unets.unet_2d_condition_flax"] = ["FlaxUNet2DConditionModel"]
+    _import_structure["models.unets.unet_2d_condition_flax"] = [
+        "FlaxUNet2DConditionModel"
+    ]
     _import_structure["models.vae_flax"] = ["FlaxAutoencoderKL"]
     _import_structure["pipelines"].extend(["FlaxDiffusionPipeline"])
     _import_structure["schedulers"].extend(
@@ -425,7 +464,9 @@ except OptionalDependencyNotAvailable:
     from .utils import dummy_flax_and_transformers_objects  # noqa F403
 
     _import_structure["utils.dummy_flax_and_transformers_objects"] = [
-        name for name in dir(dummy_flax_and_transformers_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_flax_and_transformers_objects)
+        if not name.startswith("_")
     ]
 
 
@@ -479,12 +520,16 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             ConsistencyDecoderVAE,
             ControlNetModel,
             ControlNetXSAdapter,
+            DiTTransformer2DModel,
+            HunyuanDiT2DModel,
             I2VGenXLUNet,
             Kandinsky3UNet,
             ModelMixin,
             MotionAdapter,
             MultiAdapter,
+            PixArtTransformer2DModel,
             PriorTransformer,
+            SD3Transformer2DModel,
             T2IAdapter,
             T5FilmDecoder,
             Transformer2DModel,
@@ -547,6 +592,8 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             EDMEulerScheduler,
             EulerAncestralDiscreteScheduler,
             EulerDiscreteScheduler,
+            FlashFlowMatchEulerDiscreteScheduler,
+            FlowMatchEulerDiscreteScheduler,
             HeunDiscreteScheduler,
             IPNDMScheduler,
             KarrasVeScheduler,
@@ -594,6 +641,7 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             AmusedInpaintPipeline,
             AmusedPipeline,
             AnimateDiffPipeline,
+            AnimateDiffSDXLPipeline,
             AnimateDiffVideoToVideoPipeline,
             AudioLDM2Pipeline,
             AudioLDM2ProjectionModel,
@@ -601,6 +649,7 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             AudioLDMPipeline,
             CLIPImageProjection,
             CycleDiffusionPipeline,
+            HunyuanDiTPipeline,
             I2VGenXLPipeline,
             IFImg2ImgPipeline,
             IFImg2ImgSuperResolutionPipeline,
@@ -633,16 +682,21 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             LDMTextToImagePipeline,
             LEditsPPPipelineStableDiffusion,
             LEditsPPPipelineStableDiffusionXL,
+            MarigoldDepthPipeline,
+            MarigoldNormalsPipeline,
             MusicLDMPipeline,
             PaintByExamplePipeline,
             PIAPipeline,
             PixArtAlphaPipeline,
+            PixArtSigmaPipeline,
             SemanticStableDiffusionPipeline,
             ShapEImg2ImgPipeline,
             ShapEPipeline,
             StableCascadeCombinedPipeline,
             StableCascadeDecoderPipeline,
             StableCascadePriorPipeline,
+            StableDiffusion3Img2ImgPipeline,
+            StableDiffusion3Pipeline,
             StableDiffusionAdapterPipeline,
             StableDiffusionAttendAndExcitePipeline,
             StableDiffusionControlNetImg2ImgPipeline,
@@ -700,15 +754,24 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
         )
 
     try:
-        if not (is_torch_available() and is_transformers_available() and is_k_diffusion_available()):
+        if not (
+            is_torch_available()
+            and is_transformers_available()
+            and is_k_diffusion_available()
+        ):
             raise OptionalDependencyNotAvailable()
     except OptionalDependencyNotAvailable:
         from .utils.dummy_torch_and_transformers_and_k_diffusion_objects import *  # noqa F403
     else:
-        from .pipelines import StableDiffusionKDiffusionPipeline, StableDiffusionXLKDiffusionPipeline
+        from .pipelines import (
+            StableDiffusionKDiffusionPipeline,
+            StableDiffusionXLKDiffusionPipeline,
+        )
 
     try:
-        if not (is_torch_available() and is_transformers_available() and is_onnx_available()):
+        if not (
+            is_torch_available() and is_transformers_available() and is_onnx_available()
+        ):
             raise OptionalDependencyNotAvailable()
     except OptionalDependencyNotAvailable:
         from .utils.dummy_torch_and_transformers_and_onnx_objects import *  # noqa F403
@@ -731,7 +794,11 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
         from .pipelines import AudioDiffusionPipeline, Mel
 
     try:
-        if not (is_transformers_available() and is_torch_available() and is_note_seq_available()):
+        if not (
+            is_transformers_available()
+            and is_torch_available()
+            and is_note_seq_available()
+        ):
             raise OptionalDependencyNotAvailable()
     except OptionalDependencyNotAvailable:
         from .utils.dummy_transformers_and_torch_and_note_seq_objects import *  # noqa F403
