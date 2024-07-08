@@ -20,11 +20,14 @@ from ..utils import (
 _dummy_objects = {}
 _import_structure = {
     "controlnet": [],
+    "controlnet_hunyuandit": [],
+    "controlnet_sd3": [],
     "controlnet_xs": [],
     "deprecated": [],
     "latent_diffusion": [],
     "ledits_pp": [],
     "marigold": [],
+    "pag": [],
     "stable_diffusion": [],
     "stable_diffusion_xl": [],
 }
@@ -136,10 +139,29 @@ else:
             "StableDiffusionXLControlNetPipeline",
         ]
     )
+    _import_structure["pag"].extend(
+        [
+            "StableDiffusionPAGPipeline",
+            "StableDiffusionXLPAGPipeline",
+            "StableDiffusionXLPAGInpaintPipeline",
+            "StableDiffusionXLControlNetPAGPipeline",
+            "StableDiffusionXLPAGImg2ImgPipeline",
+        ]
+    )
     _import_structure["controlnet_xs"].extend(
         [
             "StableDiffusionControlNetXSPipeline",
             "StableDiffusionXLControlNetXSPipeline",
+        ]
+    )
+    _import_structure["controlnet_hunyuandit"].extend(
+        [
+            "HunyuanDiTControlNetPipeline",
+        ]
+    )
+    _import_structure["controlnet_sd3"].extend(
+        [
+            "StableDiffusion3ControlNetPipeline",
         ]
     )
     _import_structure["deepfloyd_if"] = [
@@ -187,6 +209,7 @@ else:
             "LEditsPPPipelineStableDiffusionXL",
         ]
     )
+    _import_structure["lumina"] = ["LuminaText2ImgPipeline"]
     _import_structure["marigold"].extend(
         [
             "MarigoldDepthPipeline",
@@ -220,6 +243,7 @@ else:
             "StableDiffusionLDM3DPipeline",
         ]
     )
+    _import_structure["stable_diffusion_3"] = ["StableDiffusion3Pipeline", "StableDiffusion3Img2ImgPipeline"]
     _import_structure["stable_diffusion_attend_and_excite"] = ["StableDiffusionAttendAndExcitePipeline"]
     _import_structure["stable_diffusion_safe"] = ["StableDiffusionPipelineSafe"]
     _import_structure["stable_diffusion_sag"] = ["StableDiffusionSAGPipeline"]
@@ -393,6 +417,12 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             StableDiffusionXLControlNetInpaintPipeline,
             StableDiffusionXLControlNetPipeline,
         )
+        from .controlnet_hunyuandit import (
+            HunyuanDiTControlNetPipeline,
+        )
+        from .controlnet_sd3 import (
+            StableDiffusion3ControlNetPipeline,
+        )
         from .controlnet_xs import (
             StableDiffusionControlNetXSPipeline,
             StableDiffusionXLControlNetXSPipeline,
@@ -457,11 +487,19 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             LEditsPPPipelineStableDiffusion,
             LEditsPPPipelineStableDiffusionXL,
         )
+        from .lumina import LuminaText2ImgPipeline
         from .marigold import (
             MarigoldDepthPipeline,
             MarigoldNormalsPipeline,
         )
         from .musicldm import MusicLDMPipeline
+        from .pag import (
+            StableDiffusionPAGPipeline,
+            StableDiffusionXLControlNetPAGPipeline,
+            StableDiffusionXLPAGImg2ImgPipeline,
+            StableDiffusionXLPAGInpaintPipeline,
+            StableDiffusionXLPAGPipeline,
+        )
         from .paint_by_example import PaintByExamplePipeline
         from .pia import PIAPipeline
         from .pixart_alpha import PixArtAlphaPipeline, PixArtSigmaPipeline
@@ -485,6 +523,7 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             StableUnCLIPImg2ImgPipeline,
             StableUnCLIPPipeline,
         )
+        from .stable_diffusion_3 import StableDiffusion3Img2ImgPipeline, StableDiffusion3Pipeline
         from .stable_diffusion_attend_and_excite import StableDiffusionAttendAndExcitePipeline
         from .stable_diffusion_diffedit import StableDiffusionDiffEditPipeline
         from .stable_diffusion_gligen import StableDiffusionGLIGENPipeline, StableDiffusionGLIGENTextImagePipeline
