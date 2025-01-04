@@ -13,13 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import gc
+import os
 import tempfile
 import unittest
 
 import numpy as np
+import pytest
+import safetensors.torch
 
 from diffusers import BitsAndBytesConfig, DiffusionPipeline, FluxTransformer2DModel, SD3Transformer2DModel
-from diffusers.utils import logging
+from diffusers.utils import is_accelerate_version, logging
 from diffusers.utils.testing_utils import (
     CaptureLogger,
     is_bitsandbytes_available,
@@ -45,6 +48,7 @@ def get_some_linear_layer(model):
 
 
 if is_transformers_available():
+    from transformers import BitsAndBytesConfig as BnbConfig
     from transformers import T5EncoderModel
 
 if is_torch_available():
@@ -118,6 +122,9 @@ class Base4bitTests(unittest.TestCase):
 
 class BnB4BitBasicTests(Base4bitTests):
     def setUp(self):
+        gc.collect()
+        torch.cuda.empty_cache()
+
         # Models
         self.model_fp16 = SD3Transformer2DModel.from_pretrained(
             self.model_name, subfolder="transformer", torch_dtype=torch.float16
@@ -232,7 +239,7 @@ class BnB4BitBasicTests(Base4bitTests):
 
     def test_config_from_pretrained(self):
         transformer_4bit = FluxTransformer2DModel.from_pretrained(
-            "sayakpaul/flux.1-dev-nf4-pkg", subfolder="transformer"
+            "hf-internal-testing/flux.1-dev-nf4-pkg", subfolder="transformer"
         )
         linear = get_some_linear_layer(transformer_4bit)
         self.assertTrue(linear.weight.__class__ == bnb.nn.Params4bit)
@@ -312,9 +319,42 @@ class BnB4BitBasicTests(Base4bitTests):
         with self.assertRaises(ValueError):
             _ = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_storage="add")
 
+    def test_bnb_4bit_errors_loading_incorrect_state_dict(self):
+        r"""
+        Test if loading with an incorrect state dict raises an error.
+        """
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            nf4_config = BitsAndBytesConfig(load_in_4bit=True)
+            model_4bit = SD3Transformer2DModel.from_pretrained(
+                self.model_name, subfolder="transformer", quantization_config=nf4_config
+            )
+            model_4bit.save_pretrained(tmpdirname)
+            del model_4bit
+
+            with self.assertRaises(ValueError) as err_context:
+                state_dict = safetensors.torch.load_file(
+                    os.path.join(tmpdirname, "diffusion_pytorch_model.safetensors")
+                )
+
+                # corrupt the state dict
+                key_to_target = "context_embedder.weight"  # can be other keys too.
+                compatible_param = state_dict[key_to_target]
+                corrupted_param = torch.randn(compatible_param.shape[0] - 1, 1)
+                state_dict[key_to_target] = bnb.nn.Params4bit(corrupted_param, requires_grad=False)
+                safetensors.torch.save_file(
+                    state_dict, os.path.join(tmpdirname, "diffusion_pytorch_model.safetensors")
+                )
+
+                _ = SD3Transformer2DModel.from_pretrained(tmpdirname)
+
+            assert key_to_target in str(err_context.exception)
+
 
 class BnB4BitTrainingTests(Base4bitTests):
     def setUp(self):
+        gc.collect()
+        torch.cuda.empty_cache()
+
         nf4_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -360,6 +400,9 @@ class BnB4BitTrainingTests(Base4bitTests):
 @require_transformers_version_greater("4.44.0")
 class SlowBnb4BitTests(Base4bitTests):
     def setUp(self) -> None:
+        gc.collect()
+        torch.cuda.empty_cache()
+
         nf4_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -391,7 +434,6 @@ class SlowBnb4BitTests(Base4bitTests):
         expected_slice = np.array([0.1123, 0.1296, 0.1609, 0.1042, 0.1230, 0.1274, 0.0928, 0.1165, 0.1216])
 
         max_diff = numpy_cosine_similarity_distance(expected_slice, out_slice)
-        print(f"{max_diff=}")
         self.assertTrue(max_diff < 1e-2)
 
     def test_generate_quality_dequantize(self):
@@ -443,12 +485,55 @@ class SlowBnb4BitTests(Base4bitTests):
 
         assert "Pipelines loaded with `dtype=torch.float16`" in cap_logger.out
 
+    @pytest.mark.xfail(
+        condition=is_accelerate_version("<=", "1.1.1"),
+        reason="Test will pass after https://github.com/huggingface/accelerate/pull/3223 is in a release.",
+        strict=True,
+    )
+    def test_pipeline_cuda_placement_works_with_nf4(self):
+        transformer_nf4_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+        )
+        transformer_4bit = SD3Transformer2DModel.from_pretrained(
+            self.model_name,
+            subfolder="transformer",
+            quantization_config=transformer_nf4_config,
+            torch_dtype=torch.float16,
+        )
+        text_encoder_3_nf4_config = BnbConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+        )
+        text_encoder_3_4bit = T5EncoderModel.from_pretrained(
+            self.model_name,
+            subfolder="text_encoder_3",
+            quantization_config=text_encoder_3_nf4_config,
+            torch_dtype=torch.float16,
+        )
+        # CUDA device placement works.
+        pipeline_4bit = DiffusionPipeline.from_pretrained(
+            self.model_name,
+            transformer=transformer_4bit,
+            text_encoder_3=text_encoder_3_4bit,
+            torch_dtype=torch.float16,
+        ).to("cuda")
+
+        # Check if inference works.
+        _ = pipeline_4bit("table", max_sequence_length=20, num_inference_steps=2)
+
+        del pipeline_4bit
+
 
 @require_transformers_version_greater("4.44.0")
 class SlowBnb4BitFluxTests(Base4bitTests):
     def setUp(self) -> None:
-        # TODO: Copy sayakpaul/flux.1-dev-nf4-pkg to testing repo.
-        model_id = "sayakpaul/flux.1-dev-nf4-pkg"
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        model_id = "hf-internal-testing/flux.1-dev-nf4-pkg"
         t5_4bit = T5EncoderModel.from_pretrained(model_id, subfolder="text_encoder_2")
         transformer_4bit = FluxTransformer2DModel.from_pretrained(model_id, subfolder="transformer")
         self.pipeline_4bit = DiffusionPipeline.from_pretrained(
