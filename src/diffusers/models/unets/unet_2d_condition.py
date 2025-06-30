@@ -235,6 +235,7 @@ class UNet2DConditionModel(
         mid_block_only_cross_attention: Optional[bool] = None,
         cross_attention_norm: Optional[str] = None,
         addition_embed_type_num_heads: int = 64,
+        additional_class_embeddings: bool = False,
     ):
         super().__init__()
 
@@ -292,6 +293,17 @@ class UNet2DConditionModel(
             post_act_fn=timestep_post_act,
             cond_proj_dim=time_cond_proj_dim,
         )
+
+        if additional_class_embeddings:
+            self.additional_class_embedding = TimestepEmbedding(
+                timestep_input_dim,
+                time_embed_dim,
+                act_fn=act_fn,
+                post_act_fn=timestep_post_act,
+                cond_proj_dim=None,
+            )
+        else:
+            self.additional_class_embedding = None
 
         self._set_encoder_hid_proj(
             encoder_hid_dim_type,
@@ -1170,6 +1182,7 @@ class UNet2DConditionModel(
         timestep: Union[torch.Tensor, float, int],
         encoder_hidden_states: torch.Tensor,
         class_labels: Optional[torch.Tensor] = None,
+        additional_class_labels: Optional[torch.Tensor] = None,
         timestep_cond: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
@@ -1295,6 +1308,16 @@ class UNet2DConditionModel(
                 emb = torch.cat([emb, class_emb], dim=-1)
             else:
                 emb = emb + class_emb
+
+        if additional_class_labels is not None:
+            additional_class_emb_proj = self.time_proj(additional_class_labels).to(
+                dtype=emb.dtype
+            )
+            additional_class_emb = self.additional_class_embedding(
+                additional_class_emb_proj
+            )
+            emb = emb + additional_class_emb
+            print("additional_class_emb", emb.shape)
 
         aug_emb = self.get_aug_embed(
             emb=emb,
