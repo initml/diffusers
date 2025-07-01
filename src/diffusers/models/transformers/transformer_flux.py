@@ -291,7 +291,7 @@ class FluxTransformer2DModel(
         joint_attention_dim: int = 4096,
         pooled_projection_dim: int = 768,
         guidance_embeds: bool = False,
-        discretization_embeds: bool = False,
+        additional_timestep_embeds: bool = False,
         axes_dims_rope: Tuple[int] = (16, 56, 56),
     ):
         super().__init__()
@@ -310,11 +310,11 @@ class FluxTransformer2DModel(
             embedding_dim=self.inner_dim, pooled_projection_dim=pooled_projection_dim
         )
 
-        if discretization_embeds:
-            self.disc_proj = Timesteps(
+        if additional_timestep_embeds:
+            self.additional_time_proj = Timesteps(
                 num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=0
             )
-            self.disc_embedder = TimestepEmbedding(
+            self.additional_timestep_embedder = TimestepEmbedding(
                 in_channels=256, time_embed_dim=self.inner_dim, sample_proj_bias=False
             )
 
@@ -469,7 +469,7 @@ class FluxTransformer2DModel(
         img_ids: torch.Tensor = None,
         txt_ids: torch.Tensor = None,
         guidance: torch.Tensor = None,
-        discretization: torch.Tensor = None,
+        additional_timestep_embeddings: torch.Tensor = None,
         joint_attention_kwargs: Optional[Dict[str, Any]] = None,
         controlnet_block_samples=None,
         controlnet_single_block_samples=None,
@@ -535,12 +535,14 @@ class FluxTransformer2DModel(
             else self.time_text_embed(timestep, guidance, pooled_projections)
         )
 
-        if discretization is not None:
-            discretization = self.disc_proj(
-                discretization
-            )  # * (discretization > 0).unsqueeze(1)
-            discretization = self.disc_embedder(discretization.to(dtype=temb.dtype))
-            temb = temb + discretization
+        if additional_timestep_embeddings is not None:
+            additional_timestep_embed_proj = self.additional_time_proj(
+                additional_timestep_embeddings
+            )
+            additional_class_emb = self.additional_timestep_embedder(
+                additional_timestep_embed_proj.to(dtype=temb.dtype)
+            )
+            temb = temb + additional_class_emb
 
         encoder_hidden_states = self.context_embedder(encoder_hidden_states)
 
