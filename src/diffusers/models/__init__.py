@@ -21,7 +21,6 @@ from ..utils import (
     is_torch_available,
 )
 
-
 _import_structure = {}
 
 if is_torch_available():
@@ -30,58 +29,102 @@ if is_torch_available():
     _import_structure["autoencoders.autoencoder_dc"] = ["AutoencoderDC"]
     _import_structure["autoencoders.autoencoder_kl"] = ["AutoencoderKL"]
     _import_structure["autoencoders.autoencoder_kl_allegro"] = ["AutoencoderKLAllegro"]
-    _import_structure["autoencoders.autoencoder_kl_cogvideox"] = ["AutoencoderKLCogVideoX"]
-    _import_structure["autoencoders.autoencoder_kl_hunyuan_video"] = ["AutoencoderKLHunyuanVideo"]
+    _import_structure["autoencoders.autoencoder_kl_cogvideox"] = [
+        "AutoencoderKLCogVideoX"
+    ]
+    _import_structure["autoencoders.autoencoder_kl_hunyuan_video"] = [
+        "AutoencoderKLHunyuanVideo"
+    ]
     _import_structure["autoencoders.autoencoder_kl_ltx"] = ["AutoencoderKLLTXVideo"]
     _import_structure["autoencoders.autoencoder_kl_magvit"] = ["AutoencoderKLMagvit"]
     _import_structure["autoencoders.autoencoder_kl_mochi"] = ["AutoencoderKLMochi"]
-    _import_structure["autoencoders.autoencoder_kl_temporal_decoder"] = ["AutoencoderKLTemporalDecoder"]
+    _import_structure["autoencoders.autoencoder_kl_temporal_decoder"] = [
+        "AutoencoderKLTemporalDecoder"
+    ]
     _import_structure["autoencoders.autoencoder_kl_wan"] = ["AutoencoderKLWan"]
     _import_structure["autoencoders.autoencoder_oobleck"] = ["AutoencoderOobleck"]
     _import_structure["autoencoders.autoencoder_tiny"] = ["AutoencoderTiny"]
-    _import_structure["autoencoders.consistency_decoder_vae"] = ["ConsistencyDecoderVAE"]
+    _import_structure["autoencoders.consistency_decoder_vae"] = [
+        "ConsistencyDecoderVAE"
+    ]
     _import_structure["autoencoders.vq_model"] = ["VQModel"]
     _import_structure["cache_utils"] = ["CacheMixin"]
     _import_structure["controlnets.controlnet"] = ["ControlNetModel"]
-    _import_structure["controlnets.controlnet_flux"] = ["FluxControlNetModel", "FluxMultiControlNetModel"]
+    _import_structure["controlnets.controlnet_sana"] = ["SanaControlNetModel"]
+    _import_structure["controlnets.controlnet_flux"] = [
+        "FluxControlNetModel",
+        "FluxMultiControlNetModel",
+    ]
     _import_structure["controlnets.controlnet_hunyuan"] = [
         "HunyuanDiT2DControlNetModel",
         "HunyuanDiT2DMultiControlNetModel",
     ]
-    _import_structure["controlnets.controlnet_sd3"] = ["SD3ControlNetModel", "SD3MultiControlNetModel"]
+    _import_structure["controlnets.controlnet_sd3"] = [
+        "SD3ControlNetModel",
+        "SD3MultiControlNetModel",
+    ]
     _import_structure["controlnets.controlnet_sparsectrl"] = ["SparseControlNetModel"]
     _import_structure["controlnets.controlnet_union"] = ["ControlNetUnionModel"]
-    _import_structure["controlnets.controlnet_xs"] = ["ControlNetXSAdapter", "UNetControlNetXSModel"]
+    _import_structure["controlnets.controlnet_xs"] = [
+        "ControlNetXSAdapter",
+        "UNetControlNetXSModel",
+    ]
     _import_structure["controlnets.multicontrolnet"] = ["MultiControlNetModel"]
-    _import_structure["controlnets.multicontrolnet_union"] = ["MultiControlNetUnionModel"]
+    _import_structure["controlnets.multicontrolnet_union"] = [
+        "MultiControlNetUnionModel"
+    ]
     _import_structure["embeddings"] = ["ImageProjection"]
     _import_structure["modeling_utils"] = ["ModelMixin"]
-    _import_structure["transformers.auraflow_transformer_2d"] = ["AuraFlowTransformer2DModel"]
-    _import_structure["transformers.cogvideox_transformer_3d"] = ["CogVideoXTransformer3DModel"]
-    _import_structure["transformers.consisid_transformer_3d"] = ["ConsisIDTransformer3DModel"]
+    _import_structure["transformers.auraflow_transformer_2d"] = [
+        "AuraFlowTransformer2DModel"
+    ]
+    _import_structure["transformers.cogvideox_transformer_3d"] = [
+        "CogVideoXTransformer3DModel"
+    ]
+    _import_structure["transformers.consisid_transformer_3d"] = [
+        "ConsisIDTransformer3DModel"
+    ]
     _import_structure["transformers.dit_transformer_2d"] = ["DiTTransformer2DModel"]
     _import_structure["transformers.dual_transformer_2d"] = ["DualTransformer2DModel"]
     _import_structure["transformers.hunyuan_transformer_2d"] = ["HunyuanDiT2DModel"]
     _import_structure["transformers.latte_transformer_3d"] = ["LatteTransformer3DModel"]
     _import_structure["transformers.lumina_nextdit2d"] = ["LuminaNextDiT2DModel"]
-    _import_structure["transformers.pixart_transformer_2d"] = ["PixArtTransformer2DModel"]
+    _import_structure["transformers.pixart_transformer_2d"] = [
+        "PixArtTransformer2DModel"
+    ]
     _import_structure["transformers.prior_transformer"] = ["PriorTransformer"]
     _import_structure["transformers.sana_transformer"] = ["SanaTransformer2DModel"]
     _import_structure["transformers.stable_audio_transformer"] = ["StableAudioDiTModel"]
     _import_structure["transformers.t5_film_transformer"] = ["T5FilmDecoder"]
     _import_structure["transformers.transformer_2d"] = ["Transformer2DModel"]
-    _import_structure["transformers.transformer_allegro"] = ["AllegroTransformer3DModel"]
-    _import_structure["transformers.transformer_cogview3plus"] = ["CogView3PlusTransformer2DModel"]
-    _import_structure["transformers.transformer_cogview4"] = ["CogView4Transformer2DModel"]
-    _import_structure["transformers.transformer_easyanimate"] = ["EasyAnimateTransformer3DModel"]
+    _import_structure["transformers.transformer_allegro"] = [
+        "AllegroTransformer3DModel"
+    ]
+    _import_structure["transformers.transformer_cogview3plus"] = [
+        "CogView3PlusTransformer2DModel"
+    ]
+    _import_structure["transformers.transformer_cogview4"] = [
+        "CogView4Transformer2DModel"
+    ]
+    _import_structure["transformers.transformer_easyanimate"] = [
+        "EasyAnimateTransformer3DModel"
+    ]
     _import_structure["transformers.transformer_flux"] = ["FluxTransformer2DModel"]
-    _import_structure["transformers.transformer_hunyuan_video"] = ["HunyuanVideoTransformer3DModel"]
+    _import_structure["transformers.transformer_hunyuan_video"] = [
+        "HunyuanVideoTransformer3DModel"
+    ]
     _import_structure["transformers.transformer_ltx"] = ["LTXVideoTransformer3DModel"]
-    _import_structure["transformers.transformer_lumina2"] = ["Lumina2Transformer2DModel"]
+    _import_structure["transformers.transformer_lumina2"] = [
+        "Lumina2Transformer2DModel"
+    ]
     _import_structure["transformers.transformer_mochi"] = ["MochiTransformer3DModel"]
-    _import_structure["transformers.transformer_omnigen"] = ["OmniGenTransformer2DModel"]
+    _import_structure["transformers.transformer_omnigen"] = [
+        "OmniGenTransformer2DModel"
+    ]
     _import_structure["transformers.transformer_sd3"] = ["SD3Transformer2DModel"]
-    _import_structure["transformers.transformer_temporal"] = ["TransformerTemporalModel"]
+    _import_structure["transformers.transformer_temporal"] = [
+        "TransformerTemporalModel"
+    ]
     _import_structure["transformers.transformer_wan"] = ["WanTransformer3DModel"]
     _import_structure["unets.unet_1d"] = ["UNet1DModel"]
     _import_structure["unets.unet_2d"] = ["UNet2DModel"]
@@ -90,7 +133,9 @@ if is_torch_available():
     _import_structure["unets.unet_i2vgen_xl"] = ["I2VGenXLUNet"]
     _import_structure["unets.unet_kandinsky3"] = ["Kandinsky3UNet"]
     _import_structure["unets.unet_motion_model"] = ["MotionAdapter", "UNetMotionModel"]
-    _import_structure["unets.unet_spatio_temporal_condition"] = ["UNetSpatioTemporalConditionModel"]
+    _import_structure["unets.unet_spatio_temporal_condition"] = [
+        "UNetSpatioTemporalConditionModel"
+    ]
     _import_structure["unets.unet_stable_cascade"] = ["StableCascadeUNet"]
     _import_structure["unets.uvit_2d"] = ["UVit2DModel"]
 
@@ -131,6 +176,7 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             HunyuanDiT2DMultiControlNetModel,
             MultiControlNetModel,
             MultiControlNetUnionModel,
+            SanaControlNetModel,
             SD3ControlNetModel,
             SD3MultiControlNetModel,
             SparseControlNetModel,
@@ -189,4 +235,6 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
 else:
     import sys
 
-    sys.modules[__name__] = _LazyModule(__name__, globals()["__file__"], _import_structure, module_spec=__spec__)
+    sys.modules[__name__] = _LazyModule(
+        __name__, globals()["__file__"], _import_structure, module_spec=__spec__
+    )

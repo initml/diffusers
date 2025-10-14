@@ -9,7 +9,6 @@ from ...utils import (
     is_transformers_available,
 )
 
-
 _dummy_objects = {}
 _import_structure = {}
 
@@ -24,6 +23,7 @@ except OptionalDependencyNotAvailable:
 else:
     _import_structure["pipeline_sana"] = ["SanaPipeline"]
     _import_structure["pipeline_sana_sprint"] = ["SanaSprintPipeline"]
+    _import_structure["pipeline_sana_controlnet"] = ["SanaControlNetPipeline"]
 
 if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
     try:
@@ -34,6 +34,7 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
         from ...utils.dummy_torch_and_transformers_objects import *
     else:
         from .pipeline_sana import SanaPipeline
+        from .pipeline_sana_controlnet import SanaControlNetPipeline
         from .pipeline_sana_sprint import SanaSprintPipeline
 else:
     import sys
