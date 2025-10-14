@@ -24,7 +24,6 @@ from ..utils import (
 _import_structure = {}
 
 if is_torch_available():
-    _import_structure["controlnets.controlnet_sana"] = ["SanaControlNetModel"]
     _import_structure["adapter"] = ["MultiAdapter", "T2IAdapter"]
     _import_structure["autoencoders.autoencoder_asym_kl"] = ["AsymmetricAutoencoderKL"]
     _import_structure["autoencoders.autoencoder_dc"] = ["AutoencoderDC"]
@@ -51,6 +50,7 @@ if is_torch_available():
     _import_structure["autoencoders.vq_model"] = ["VQModel"]
     _import_structure["cache_utils"] = ["CacheMixin"]
     _import_structure["controlnets.controlnet"] = ["ControlNetModel"]
+    _import_structure["controlnets.controlnet_sana"] = ["SanaControlNetModel"]
     _import_structure["controlnets.controlnet_flux"] = [
         "FluxControlNetModel",
         "FluxMultiControlNetModel",
