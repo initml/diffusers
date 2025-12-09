@@ -22,7 +22,6 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 from . import logging
 from .import_utils import is_torch_available, is_torch_mlu_available, is_torch_npu_available, is_torch_version
 
-
 if is_torch_available():
     import torch
     from torch.fft import fftn, fftshift, ifftn, ifftshift
@@ -164,7 +163,11 @@ def randn_tensor(
     device = device or torch.device("cpu")
 
     if generator is not None:
-        gen_device_type = generator.device.type if not isinstance(generator, list) else generator[0].device.type
+        gen_device_type = (
+            generator.device.type
+            if not isinstance(generator, list)
+            else generator[0].device.type
+        )
         if gen_device_type != device.type and gen_device_type == "cpu":
             rand_device = "cpu"
             if device != "mps":
@@ -174,7 +177,9 @@ def randn_tensor(
                     f" slightly speed up this function by passing a generator that was created on the {device} device."
                 )
         elif gen_device_type != device.type and gen_device_type == "cuda":
-            raise ValueError(f"Cannot generate a {device} tensor from a generator of type {gen_device_type}.")
+            raise ValueError(
+                f"Cannot generate a {device} tensor from a generator of type {gen_device_type}."
+            )
 
     # make sure generator list of length 1 is treated like a non-list
     if isinstance(generator, list) and len(generator) == 1:
@@ -183,12 +188,20 @@ def randn_tensor(
     if isinstance(generator, list):
         shape = (1,) + shape[1:]
         latents = [
-            torch.randn(shape, generator=generator[i], device=rand_device, dtype=dtype, layout=layout)
+            torch.randn(
+                shape,
+                generator=generator[i],
+                device=rand_device,
+                dtype=dtype,
+                layout=layout,
+            )
             for i in range(batch_size)
         ]
         latents = torch.cat(latents, dim=0).to(device)
     else:
-        latents = torch.randn(shape, generator=generator, device=rand_device, dtype=dtype, layout=layout).to(device)
+        latents = torch.randn(
+            shape, generator=generator, device=rand_device, dtype=dtype, layout=layout
+        ).to(device)
 
     return latents
 
@@ -229,7 +242,9 @@ def fourier_filter(x_in: "torch.Tensor", threshold: int, scale: int) -> "torch.T
     mask = torch.ones((B, C, H, W), device=x.device)
 
     crow, ccol = H // 2, W // 2
-    mask[..., crow - threshold : crow + threshold, ccol - threshold : ccol + threshold] = scale
+    mask[
+        ..., crow - threshold : crow + threshold, ccol - threshold : ccol + threshold
+    ] = scale
     x_freq = x_freq * mask
 
     # IFFT
@@ -240,7 +255,10 @@ def fourier_filter(x_in: "torch.Tensor", threshold: int, scale: int) -> "torch.T
 
 
 def apply_freeu(
-    resolution_idx: int, hidden_states: "torch.Tensor", res_hidden_states: "torch.Tensor", **freeu_kwargs
+    resolution_idx: int,
+    hidden_states: "torch.Tensor",
+    res_hidden_states: "torch.Tensor",
+    **freeu_kwargs,
 ) -> Tuple["torch.Tensor", "torch.Tensor"]:
     """Applies the FreeU mechanism as introduced in https://huggingface.co/papers/2309.11497. Adapted from the official
     code repository: https://github.com/ChenyangSi/FreeU.
@@ -256,12 +274,20 @@ def apply_freeu(
     """
     if resolution_idx == 0:
         num_half_channels = hidden_states.shape[1] // 2
-        hidden_states[:, :num_half_channels] = hidden_states[:, :num_half_channels] * freeu_kwargs["b1"]
-        res_hidden_states = fourier_filter(res_hidden_states, threshold=1, scale=freeu_kwargs["s1"])
+        hidden_states[:, :num_half_channels] = (
+            hidden_states[:, :num_half_channels] * freeu_kwargs["b1"]
+        )
+        res_hidden_states = fourier_filter(
+            res_hidden_states, threshold=1, scale=freeu_kwargs["s1"]
+        )
     if resolution_idx == 1:
         num_half_channels = hidden_states.shape[1] // 2
-        hidden_states[:, :num_half_channels] = hidden_states[:, :num_half_channels] * freeu_kwargs["b2"]
-        res_hidden_states = fourier_filter(res_hidden_states, threshold=1, scale=freeu_kwargs["s2"])
+        hidden_states[:, :num_half_channels] = (
+            hidden_states[:, :num_half_channels] * freeu_kwargs["b2"]
+        )
+        res_hidden_states = fourier_filter(
+            res_hidden_states, threshold=1, scale=freeu_kwargs["s2"]
+        )
 
     return hidden_states, res_hidden_states
 

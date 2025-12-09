@@ -17,7 +17,6 @@ from ..utils import (
     is_transformers_available,
 )
 
-
 # These modules contain pipelines from multiple libraries/frameworks
 _dummy_objects = {}
 _import_structure = {
@@ -79,12 +78,16 @@ else:
     _import_structure["deprecated"].extend(["AudioDiffusionPipeline", "Mel"])
 
 try:
-    if not (is_transformers_available() and is_torch_available() and is_note_seq_available()):
+    if not (
+        is_transformers_available() and is_torch_available() and is_note_seq_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from ..utils import dummy_transformers_and_torch_and_note_seq_objects  # noqa F403
 
-    _dummy_objects.update(get_objects_from_module(dummy_transformers_and_torch_and_note_seq_objects))
+    _dummy_objects.update(
+        get_objects_from_module(dummy_transformers_and_torch_and_note_seq_objects)
+    )
 else:
     _import_structure["deprecated"].extend(
         [
@@ -118,7 +121,11 @@ else:
         ]
     )
     _import_structure["allegro"] = ["AllegroPipeline"]
-    _import_structure["amused"] = ["AmusedImg2ImgPipeline", "AmusedInpaintPipeline", "AmusedPipeline"]
+    _import_structure["amused"] = [
+        "AmusedImg2ImgPipeline",
+        "AmusedInpaintPipeline",
+        "AmusedPipeline",
+    ]
     _import_structure["animatediff"] = [
         "AnimateDiffPipeline",
         "AnimateDiffControlNetPipeline",
@@ -349,7 +356,9 @@ else:
         "StableDiffusion3Img2ImgPipeline",
         "StableDiffusion3InpaintPipeline",
     ]
-    _import_structure["stable_diffusion_attend_and_excite"] = ["StableDiffusionAttendAndExcitePipeline"]
+    _import_structure["stable_diffusion_attend_and_excite"] = [
+        "StableDiffusionAttendAndExcitePipeline"
+    ]
     _import_structure["stable_diffusion_safe"] = ["StableDiffusionPipelineSafe"]
     _import_structure["stable_diffusion_sag"] = ["StableDiffusionSAGPipeline"]
     _import_structure["stable_diffusion_gligen"] = [
@@ -433,12 +442,16 @@ except OptionalDependencyNotAvailable:
 else:
     _import_structure["onnx_utils"] = ["OnnxRuntimeModel"]
 try:
-    if not (is_torch_available() and is_transformers_available() and is_onnx_available()):
+    if not (
+        is_torch_available() and is_transformers_available() and is_onnx_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from ..utils import dummy_torch_and_transformers_and_onnx_objects  # noqa F403
 
-    _dummy_objects.update(get_objects_from_module(dummy_torch_and_transformers_and_onnx_objects))
+    _dummy_objects.update(
+        get_objects_from_module(dummy_torch_and_transformers_and_onnx_objects)
+    )
 else:
     _import_structure["stable_diffusion"].extend(
         [
@@ -451,14 +464,18 @@ else:
     )
 
 try:
-    if not (is_torch_available() and is_transformers_available() and is_k_diffusion_available()):
+    if not (
+        is_torch_available()
+        and is_transformers_available()
+        and is_k_diffusion_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
-    from ..utils import (
-        dummy_torch_and_transformers_and_k_diffusion_objects,
-    )
+    from ..utils import dummy_torch_and_transformers_and_k_diffusion_objects
 
-    _dummy_objects.update(get_objects_from_module(dummy_torch_and_transformers_and_k_diffusion_objects))
+    _dummy_objects.update(
+        get_objects_from_module(dummy_torch_and_transformers_and_k_diffusion_objects)
+    )
 else:
     _import_structure["stable_diffusion_k_diffusion"] = [
         "StableDiffusionKDiffusionPipeline",
@@ -466,14 +483,18 @@ else:
     ]
 
 try:
-    if not (is_torch_available() and is_transformers_available() and is_sentencepiece_available()):
+    if not (
+        is_torch_available()
+        and is_transformers_available()
+        and is_sentencepiece_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
-    from ..utils import (
-        dummy_torch_and_transformers_and_sentencepiece_objects,
-    )
+    from ..utils import dummy_torch_and_transformers_and_sentencepiece_objects
 
-    _dummy_objects.update(get_objects_from_module(dummy_torch_and_transformers_and_sentencepiece_objects))
+    _dummy_objects.update(
+        get_objects_from_module(dummy_torch_and_transformers_and_sentencepiece_objects)
+    )
 else:
     _import_structure["kolors"] = [
         "KolorsPipeline",
@@ -540,7 +561,13 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
         from .dance_diffusion import DanceDiffusionPipeline
         from .ddim import DDIMPipeline
         from .ddpm import DDPMPipeline
-        from .deprecated import KarrasVePipeline, LDMPipeline, PNDMPipeline, RePaintPipeline, ScoreSdeVePipeline
+        from .deprecated import (
+            KarrasVePipeline,
+            LDMPipeline,
+            PNDMPipeline,
+            RePaintPipeline,
+            ScoreSdeVePipeline,
+        )
         from .dit import DiTPipeline
         from .latent_diffusion import LDMSuperResolutionPipeline
         from .pipeline_utils import (
@@ -606,10 +633,11 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             StableDiffusionXLControlNetUnionInpaintPipeline,
             StableDiffusionXLControlNetUnionPipeline,
         )
-        from .controlnet_hunyuandit import (
-            HunyuanDiTControlNetPipeline,
+        from .controlnet_hunyuandit import HunyuanDiTControlNetPipeline
+        from .controlnet_sd3 import (
+            StableDiffusion3ControlNetInpaintingPipeline,
+            StableDiffusion3ControlNetPipeline,
         )
-        from .controlnet_sd3 import StableDiffusion3ControlNetInpaintingPipeline, StableDiffusion3ControlNetPipeline
         from .controlnet_xs import (
             StableDiffusionControlNetXSPipeline,
             StableDiffusionXLControlNetXSPipeline,
@@ -797,9 +825,14 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             StableDiffusion3InpaintPipeline,
             StableDiffusion3Pipeline,
         )
-        from .stable_diffusion_attend_and_excite import StableDiffusionAttendAndExcitePipeline
+        from .stable_diffusion_attend_and_excite import (
+            StableDiffusionAttendAndExcitePipeline,
+        )
         from .stable_diffusion_diffedit import StableDiffusionDiffEditPipeline
-        from .stable_diffusion_gligen import StableDiffusionGLIGENPipeline, StableDiffusionGLIGENTextImagePipeline
+        from .stable_diffusion_gligen import (
+            StableDiffusionGLIGENPipeline,
+            StableDiffusionGLIGENTextImagePipeline,
+        )
         from .stable_diffusion_ldm3d import StableDiffusionLDM3DPipeline
         from .stable_diffusion_panorama import StableDiffusionPanoramaPipeline
         from .stable_diffusion_safe import StableDiffusionPipelineSafe
@@ -853,7 +886,11 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             from .onnx_utils import OnnxRuntimeModel
 
         try:
-            if not (is_torch_available() and is_transformers_available() and is_onnx_available()):
+            if not (
+                is_torch_available()
+                and is_transformers_available()
+                and is_onnx_available()
+            ):
                 raise OptionalDependencyNotAvailable()
         except OptionalDependencyNotAvailable:
             from ..utils.dummy_torch_and_transformers_and_onnx_objects import *
@@ -867,7 +904,11 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             )
 
         try:
-            if not (is_torch_available() and is_transformers_available() and is_k_diffusion_available()):
+            if not (
+                is_torch_available()
+                and is_transformers_available()
+                and is_k_diffusion_available()
+            ):
                 raise OptionalDependencyNotAvailable()
         except OptionalDependencyNotAvailable:
             from ..utils.dummy_torch_and_transformers_and_k_diffusion_objects import *
@@ -878,15 +919,16 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             )
 
         try:
-            if not (is_torch_available() and is_transformers_available() and is_sentencepiece_available()):
+            if not (
+                is_torch_available()
+                and is_transformers_available()
+                and is_sentencepiece_available()
+            ):
                 raise OptionalDependencyNotAvailable()
         except OptionalDependencyNotAvailable:
             from ..utils.dummy_torch_and_transformers_and_sentencepiece_objects import *
         else:
-            from .kolors import (
-                KolorsImg2ImgPipeline,
-                KolorsPipeline,
-            )
+            from .kolors import KolorsImg2ImgPipeline, KolorsPipeline
 
         try:
             if not (is_torch_available() and is_transformers_available() and is_opencv_available()):
@@ -916,21 +958,20 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
                 FlaxStableDiffusionInpaintPipeline,
                 FlaxStableDiffusionPipeline,
             )
-            from .stable_diffusion_xl import (
-                FlaxStableDiffusionXLPipeline,
-            )
+            from .stable_diffusion_xl import FlaxStableDiffusionXLPipeline
 
         try:
-            if not (is_transformers_available() and is_torch_available() and is_note_seq_available()):
+            if not (
+                is_transformers_available()
+                and is_torch_available()
+                and is_note_seq_available()
+            ):
                 raise OptionalDependencyNotAvailable()
         except OptionalDependencyNotAvailable:
             from ..utils.dummy_transformers_and_torch_and_note_seq_objects import *  # noqa F403
 
         else:
-            from .deprecated import (
-                MidiProcessor,
-                SpectrogramDiffusionPipeline,
-            )
+            from .deprecated import MidiProcessor, SpectrogramDiffusionPipeline
 
         from .skyreels_v2 import (
             SkyReelsV2DiffusionForcingImageToVideoPipeline,
