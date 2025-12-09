@@ -26,7 +26,7 @@ from ...utils.accelerate_utils import apply_forward_hook
 from ..activations import get_activation
 from ..modeling_outputs import AutoencoderKLOutput
 from ..modeling_utils import ModelMixin
-from .vae import DecoderOutput, DiagonalGaussianDistribution
+from .vae import AutoencoderMixin, DecoderOutput, DiagonalGaussianDistribution
 
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
@@ -428,7 +428,7 @@ class EasyAnimateMidBlock3d(nn.Module):
 
 class EasyAnimateEncoder(nn.Module):
     r"""
-    Causal encoder for 3D video-like data used in [EasyAnimate](https://arxiv.org/abs/2405.18991).
+    Causal encoder for 3D video-like data used in [EasyAnimate](https://huggingface.co/papers/2405.18991).
     """
 
     _supports_gradient_checkpointing = True
@@ -544,7 +544,7 @@ class EasyAnimateEncoder(nn.Module):
 
 class EasyAnimateDecoder(nn.Module):
     r"""
-    Causal decoder for 3D video-like data used in [EasyAnimate](https://arxiv.org/abs/2405.18991).
+    Causal decoder for 3D video-like data used in [EasyAnimate](https://huggingface.co/papers/2405.18991).
     """
 
     _supports_gradient_checkpointing = True
@@ -663,10 +663,10 @@ class EasyAnimateDecoder(nn.Module):
         return hidden_states
 
 
-class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
+class AutoencoderKLMagvit(ModelMixin, AutoencoderMixin, ConfigMixin):
     r"""
     A VAE model with KL loss for encoding images into latents and decoding latent representations into images. This
-    model is used in [EasyAnimate](https://arxiv.org/abs/2405.18991).
+    model is used in [EasyAnimate](https://huggingface.co/papers/2405.18991).
 
     This model inherits from [`ModelMixin`]. Check the superclass documentation for it's generic methods implemented
     for all models (such as downloading or saving).
@@ -805,27 +805,6 @@ class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
         self.tile_sample_stride_width = tile_sample_stride_width or self.tile_sample_stride_width
         self.tile_sample_stride_num_frames = tile_sample_stride_num_frames or self.tile_sample_stride_num_frames
 
-    def disable_tiling(self) -> None:
-        r"""
-        Disable tiled VAE decoding. If `enable_tiling` was previously enabled, this method will go back to computing
-        decoding in one step.
-        """
-        self.use_tiling = False
-
-    def enable_slicing(self) -> None:
-        r"""
-        Enable sliced VAE decoding. When this option is enabled, the VAE will split the input tensor in slices to
-        compute decoding in several steps. This is useful to save some memory and allow larger batch sizes.
-        """
-        self.use_slicing = True
-
-    def disable_slicing(self) -> None:
-        r"""
-        Disable sliced VAE decoding. If `enable_slicing` was previously enabled, this method will go back to computing
-        decoding in one step.
-        """
-        self.use_slicing = False
-
     @apply_forward_hook
     def _encode(
         self, x: torch.Tensor, return_dict: bool = True
@@ -887,7 +866,7 @@ class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
     def _decode(self, z: torch.Tensor, return_dict: bool = True) -> Union[DecoderOutput, torch.Tensor]:
         batch_size, num_channels, num_frames, height, width = z.shape
         tile_latent_min_height = self.tile_sample_min_height // self.spatial_compression_ratio
-        tile_latent_min_width = self.tile_sample_stride_width // self.spatial_compression_ratio
+        tile_latent_min_width = self.tile_sample_min_width // self.spatial_compression_ratio
 
         if self.use_tiling and (z.shape[-1] > tile_latent_min_height or z.shape[-2] > tile_latent_min_width):
             return self.tiled_decode(z, return_dict=return_dict)

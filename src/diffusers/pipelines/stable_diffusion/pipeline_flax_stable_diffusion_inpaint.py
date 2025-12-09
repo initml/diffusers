@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -103,11 +103,7 @@ class FlaxStableDiffusionInpaintPipeline(FlaxDiffusionPipeline):
     r"""
     Flax-based pipeline for text-guided image inpainting using Stable Diffusion.
 
-    <Tip warning={true}>
-
-    🧪 This is an experimental feature!
-
-    </Tip>
+    > [!WARNING] > 🧪 This is an experimental feature!
 
     This model inherits from [`FlaxDiffusionPipeline`]. Check the superclass documentation for the generic methods
     implemented for all pipelines (downloading, saving, running on a particular device, etc.).
@@ -335,7 +331,7 @@ class FlaxStableDiffusionInpaintPipeline(FlaxDiffusionPipeline):
                 f"Incorrect configuration settings! The config of `pipeline.unet`: {self.unet.config} expects"
                 f" {self.unet.config.in_channels} but received `num_channels_latents`: {num_channels_latents} +"
                 f" `num_channels_mask`: {num_channels_mask} + `num_channels_masked_image`: {num_channels_masked_image}"
-                f" = {num_channels_latents+num_channels_masked_image+num_channels_mask}. Please verify the config of"
+                f" = {num_channels_latents + num_channels_masked_image + num_channels_mask}. Please verify the config of"
                 " `pipeline.unet` or your `mask_image` or `image` input."
             )
 
@@ -435,12 +431,8 @@ class FlaxStableDiffusionInpaintPipeline(FlaxDiffusionPipeline):
             jit (`bool`, defaults to `False`):
                 Whether to run `pmap` versions of the generation and safety scoring functions.
 
-                    <Tip warning={true}>
-
-                    This argument exists because `__call__` is not yet end-to-end pmap-able. It will be removed in a
-                    future release.
-
-                    </Tip>
+                    > [!WARNING] > This argument exists because `__call__` is not yet end-to-end pmap-able. It will be
+                    removed in a > future release.
 
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether or not to return a [`~pipelines.stable_diffusion.FlaxStableDiffusionPipelineOutput`] instead of

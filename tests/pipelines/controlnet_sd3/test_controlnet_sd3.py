@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc and The InstantX Team.
+# Copyright 2025 HuggingFace Inc and The InstantX Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ import unittest
 from typing import Optional
 
 import numpy as np
-import pytest
 import torch
 from transformers import AutoTokenizer, CLIPTextConfig, CLIPTextModelWithProjection, CLIPTokenizer, T5EncoderModel
 
@@ -30,7 +29,9 @@ from diffusers import (
 )
 from diffusers.models import SD3ControlNetModel, SD3MultiControlNetModel
 from diffusers.utils import load_image
-from diffusers.utils.testing_utils import (
+from diffusers.utils.torch_utils import randn_tensor
+
+from ...testing_utils import (
     backend_empty_cache,
     enable_full_determinism,
     numpy_cosine_similarity_distance,
@@ -38,8 +39,6 @@ from diffusers.utils.testing_utils import (
     slow,
     torch_device,
 )
-from diffusers.utils.torch_utils import randn_tensor
-
 from ..test_pipelines_common import PipelineTesterMixin
 
 
@@ -202,9 +201,9 @@ class StableDiffusion3ControlNetPipelineFastTests(unittest.TestCase, PipelineTes
         else:
             expected_slice = np.array([1.0000, 0.9072, 0.4209, 0.2744, 0.5737, 0.3840, 0.6113, 0.6250, 0.6328])
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f"Expected: {expected_slice}, got: {image_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-2, (
+            f"Expected: {expected_slice}, got: {image_slice.flatten()}"
+        )
 
     def test_controlnet_sd3(self):
         components = self.get_dummy_components()
@@ -221,7 +220,6 @@ class StableDiffusion3ControlNetPipelineFastTests(unittest.TestCase, PipelineTes
 
 @slow
 @require_big_accelerator
-@pytest.mark.big_gpu_with_torch_cuda
 class StableDiffusion3ControlNetPipelineSlowTests(unittest.TestCase):
     pipeline_class = StableDiffusion3ControlNetPipeline
 

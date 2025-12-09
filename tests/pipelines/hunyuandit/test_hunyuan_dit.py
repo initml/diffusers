@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,20 +21,16 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, BertModel, T5EncoderModel
 
-from diffusers import (
-    AutoencoderKL,
-    DDPMScheduler,
-    HunyuanDiT2DModel,
-    HunyuanDiTPipeline,
-)
-from diffusers.utils.testing_utils import (
+from diffusers import AutoencoderKL, DDPMScheduler, HunyuanDiT2DModel, HunyuanDiTPipeline
+
+from ...testing_utils import (
+    backend_empty_cache,
     enable_full_determinism,
     numpy_cosine_similarity_distance,
     require_torch_accelerator,
     slow,
     torch_device,
 )
-
 from ..pipeline_params import TEXT_TO_IMAGE_BATCH_PARAMS, TEXT_TO_IMAGE_IMAGE_PARAMS, TEXT_TO_IMAGE_PARAMS
 from ..test_pipelines_common import (
     PipelineTesterMixin,
@@ -128,14 +124,22 @@ class HunyuanDiTPipelineFastTests(PipelineTesterMixin, unittest.TestCase):
         max_diff = np.abs(image_slice.flatten() - expected_slice).max()
         self.assertLessEqual(max_diff, 1e-3)
 
-    @unittest.skip("Not supported.")
+    @unittest.skip("The HunyuanDiT Attention pooling layer does not support sequential CPU offloading.")
     def test_sequential_cpu_offload_forward_pass(self):
         # TODO(YiYi) need to fix later
+        # This is because it instantiates it's attention layer from torch.nn.MultiheadAttention, which calls to
+        # `torch.nn.functional.multi_head_attention_forward` with the weights and bias. Since the hook is never
+        # triggered with a forward pass call, the weights stay on the CPU. There are more examples where we skip
+        # this test because of MHA (example: HunyuanVideo Framepack)
         pass
 
-    @unittest.skip("Not supported.")
+    @unittest.skip("The HunyuanDiT Attention pooling layer does not support sequential CPU offloading.")
     def test_sequential_offload_forward_pass_twice(self):
         # TODO(YiYi) need to fix later
+        # This is because it instantiates it's attention layer from torch.nn.MultiheadAttention, which calls to
+        # `torch.nn.functional.multi_head_attention_forward` with the weights and bias. Since the hook is never
+        # triggered with a forward pass call, the weights stay on the CPU. There are more examples where we skip
+        # this test because of MHA (example: HunyuanVideo Framepack)
         pass
 
     def test_inference_batch_single_identical(self):
@@ -179,9 +183,9 @@ class HunyuanDiTPipelineFastTests(PipelineTesterMixin, unittest.TestCase):
         # TODO (sayakpaul): will refactor this once `fuse_qkv_projections()` has been added
         # to the pipeline level.
         pipe.transformer.fuse_qkv_projections()
-        assert check_qkv_fusion_processors_exist(
-            pipe.transformer
-        ), "Something wrong with the fused attention processors. Expected all the attention processors to be fused."
+        assert check_qkv_fusion_processors_exist(pipe.transformer), (
+            "Something wrong with the fused attention processors. Expected all the attention processors to be fused."
+        )
         assert check_qkv_fusion_matches_attn_procs_length(
             pipe.transformer, pipe.transformer.original_attn_processors
         ), "Something wrong with the attention processors concerning the fused QKV projections."
@@ -197,15 +201,15 @@ class HunyuanDiTPipelineFastTests(PipelineTesterMixin, unittest.TestCase):
         image_disabled = pipe(**inputs)[0]
         image_slice_disabled = image_disabled[0, -3:, -3:, -1]
 
-        assert np.allclose(
-            original_image_slice, image_slice_fused, atol=1e-2, rtol=1e-2
-        ), "Fusion of QKV projections shouldn't affect the outputs."
-        assert np.allclose(
-            image_slice_fused, image_slice_disabled, atol=1e-2, rtol=1e-2
-        ), "Outputs, with QKV projection fusion enabled, shouldn't change when fused QKV projections are disabled."
-        assert np.allclose(
-            original_image_slice, image_slice_disabled, atol=1e-2, rtol=1e-2
-        ), "Original outputs should match when fused QKV projections are disabled."
+        assert np.allclose(original_image_slice, image_slice_fused, atol=1e-2, rtol=1e-2), (
+            "Fusion of QKV projections shouldn't affect the outputs."
+        )
+        assert np.allclose(image_slice_fused, image_slice_disabled, atol=1e-2, rtol=1e-2), (
+            "Outputs, with QKV projection fusion enabled, shouldn't change when fused QKV projections are disabled."
+        )
+        assert np.allclose(original_image_slice, image_slice_disabled, atol=1e-2, rtol=1e-2), (
+            "Original outputs should match when fused QKV projections are disabled."
+        )
 
     @unittest.skip(
         "Test not supported as `encode_prompt` is called two times separately which deivates from about 99% of the pipelines we have."
@@ -315,12 +319,12 @@ class HunyuanDiTPipelineIntegrationTests(unittest.TestCase):
     def setUp(self):
         super().setUp()
         gc.collect()
-        torch.cuda.empty_cache()
+        backend_empty_cache(torch_device)
 
     def tearDown(self):
         super().tearDown()
         gc.collect()
-        torch.cuda.empty_cache()
+        backend_empty_cache(torch_device)
 
     def test_hunyuan_dit_1024(self):
         generator = torch.Generator("cpu").manual_seed(0)

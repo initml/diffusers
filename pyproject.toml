@@ -1,9 +1,12 @@
 [tool.ruff]
 line-length = 119
+extend-exclude = [
+    "src/diffusers/pipelines/flux2/system_messages.py",
+]
 
 [tool.ruff.lint]
 # Never enforce `E501` (line length violations).
-ignore = ["C901", "E501", "E741", "F402", "F823"]
+ignore = ["C901", "E501", "E721", "E741", "F402", "F823"]
 select = ["C", "E", "F", "I", "W"]
 
 # Ignore import violations in all `__init__.py` files.

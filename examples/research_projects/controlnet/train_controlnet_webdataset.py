@@ -12,6 +12,7 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
+# limitations under the License.
 
 import argparse
 import functools
@@ -803,21 +804,20 @@ def parse_args(input_args=None):
         "--control_type",
         type=str,
         default="canny",
-        help=("The type of controlnet conditioning image to use. One of `canny`, `depth`" " Defaults to `canny`."),
+        help=("The type of controlnet conditioning image to use. One of `canny`, `depth` Defaults to `canny`."),
     )
     parser.add_argument(
         "--transformer_layers_per_block",
         type=str,
         default=None,
-        help=("The number of layers per block in the transformer. If None, defaults to" " `args.transformer_layers`."),
+        help=("The number of layers per block in the transformer. If None, defaults to `args.transformer_layers`."),
     )
     parser.add_argument(
         "--old_style_controlnet",
         action="store_true",
         default=False,
         help=(
-            "Use the old style controlnet, which is a single transformer layer with"
-            " a single head. Defaults to False."
+            "Use the old style controlnet, which is a single transformer layer with a single head. Defaults to False."
         ),
     )
 
@@ -900,7 +900,7 @@ def main(args):
     if args.report_to == "wandb" and args.hub_token is not None:
         raise ValueError(
             "You cannot use both --report_to=wandb and --hub_token due to a security risk of exposing your token."
-            " Please use `huggingface-cli login` to authenticate with the Hub."
+            " Please use `hf auth login` to authenticate with the Hub."
         )
 
     logging_dir = Path(args.output_dir, args.logging_dir)

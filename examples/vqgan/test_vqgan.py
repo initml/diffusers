@@ -24,11 +24,17 @@ import tempfile
 import torch
 
 from diffusers import VQModel
-from diffusers.utils.testing_utils import require_timm
 
 
+# Add parent directories to path to import from tests
 sys.path.append("..")
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
+
 from test_examples_utils import ExamplesTestsAccelerate, run_command  # noqa: E402
+
+from tests.testing_utils import require_timm  # noqa
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -177,7 +183,7 @@ class TextToImage(ExamplesTestsAccelerate):
                 --model_config_name_or_path {vqmodel_config_path}
                 --discriminator_config_name_or_path {discriminator_config_path}
                 --checkpointing_steps=1
-                --resume_from_checkpoint={os.path.join(tmpdir, 'checkpoint-4')}
+                --resume_from_checkpoint={os.path.join(tmpdir, "checkpoint-4")}
                 --output_dir {tmpdir}
                 --seed=0
                 """.split()
@@ -262,7 +268,7 @@ class TextToImage(ExamplesTestsAccelerate):
                 --model_config_name_or_path {vqmodel_config_path}
                 --discriminator_config_name_or_path {discriminator_config_path}
                 --checkpointing_steps=1
-                --resume_from_checkpoint={os.path.join(tmpdir, 'checkpoint-4')}
+                --resume_from_checkpoint={os.path.join(tmpdir, "checkpoint-4")}
                 --output_dir {tmpdir}
                 --use_ema
                 --seed=0
@@ -377,7 +383,7 @@ class TextToImage(ExamplesTestsAccelerate):
                 --discriminator_config_name_or_path {discriminator_config_path}
                 --output_dir {tmpdir}
                 --checkpointing_steps=2
-                --resume_from_checkpoint={os.path.join(tmpdir, 'checkpoint-4')}
+                --resume_from_checkpoint={os.path.join(tmpdir, "checkpoint-4")}
                 --checkpoints_total_limit=2
                 --seed=0
                 """.split()

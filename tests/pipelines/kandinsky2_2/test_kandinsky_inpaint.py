@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,8 @@ from diffusers import (
     UNet2DConditionModel,
     VQModel,
 )
-from diffusers.utils.testing_utils import (
+
+from ...testing_utils import (
     backend_empty_cache,
     enable_full_determinism,
     floats_tensor,
@@ -36,11 +37,11 @@ from diffusers.utils.testing_utils import (
     load_image,
     load_numpy,
     numpy_cosine_similarity_distance,
+    require_accelerator,
     require_torch_accelerator,
     slow,
     torch_device,
 )
-
 from ..test_pipelines_common import PipelineTesterMixin
 
 
@@ -234,12 +235,12 @@ class KandinskyV22InpaintPipelineFastTests(PipelineTesterMixin, unittest.TestCas
             [0.50775903, 0.49527195, 0.48824543, 0.50192237, 0.48644906, 0.49373814, 0.4780598, 0.47234827, 0.48327848]
         )
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
-        assert (
-            np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        )
+        assert np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        )
 
     def test_inference_batch_single_identical(self):
         super().test_inference_batch_single_identical(expected_max_diff=3e-3)
@@ -254,6 +255,7 @@ class KandinskyV22InpaintPipelineFastTests(PipelineTesterMixin, unittest.TestCas
     def test_save_load_optional_components(self):
         super().test_save_load_optional_components(expected_max_difference=5e-4)
 
+    @require_accelerator
     def test_sequential_cpu_offload_forward_pass(self):
         super().test_sequential_cpu_offload_forward_pass(expected_max_diff=5e-4)
 
@@ -314,7 +316,7 @@ class KandinskyV22InpaintPipelineIntegrationTests(unittest.TestCase):
         )
 
         init_image = load_image(
-            "https://huggingface.co/datasets/hf-internal-testing/diffusers-images/resolve/main" "/kandinsky/cat.png"
+            "https://huggingface.co/datasets/hf-internal-testing/diffusers-images/resolve/main/kandinsky/cat.png"
         )
         mask = np.zeros((768, 768), dtype=np.float32)
         mask[:250, 250:-250] = 1

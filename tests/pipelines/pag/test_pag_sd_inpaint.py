@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,7 +29,8 @@ from diffusers import (
     StableDiffusionPAGInpaintPipeline,
     UNet2DConditionModel,
 )
-from diffusers.utils.testing_utils import (
+
+from ...testing_utils import (
     backend_empty_cache,
     enable_full_determinism,
     floats_tensor,
@@ -38,7 +39,6 @@ from diffusers.utils.testing_utils import (
     slow,
     torch_device,
 )
-
 from ..pipeline_params import (
     TEXT_GUIDED_IMAGE_INPAINTING_BATCH_PARAMS,
     TEXT_GUIDED_IMAGE_INPAINTING_PARAMS,
@@ -255,7 +255,7 @@ class StableDiffusionPAGInpaintPipelineFastTests(
 @require_torch_accelerator
 class StableDiffusionPAGPipelineIntegrationTests(unittest.TestCase):
     pipeline_class = StableDiffusionPAGInpaintPipeline
-    repo_id = "runwayml/stable-diffusion-v1-5"
+    repo_id = "stable-diffusion-v1-5/stable-diffusion-v1-5"
 
     def setUp(self):
         super().setUp()
@@ -302,9 +302,9 @@ class StableDiffusionPAGPipelineIntegrationTests(unittest.TestCase):
         expected_slice = np.array(
             [0.38793945, 0.4111328, 0.47924805, 0.39208984, 0.4165039, 0.41674805, 0.37060547, 0.36791992, 0.40625]
         )
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-3
-        ), f"output is different from expected, {image_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-3, (
+            f"output is different from expected, {image_slice.flatten()}"
+        )
 
     def test_pag_uncond(self):
         pipeline = AutoPipelineForInpainting.from_pretrained(self.repo_id, enable_pag=True, torch_dtype=torch.float16)
@@ -319,6 +319,6 @@ class StableDiffusionPAGPipelineIntegrationTests(unittest.TestCase):
         expected_slice = np.array(
             [0.3876953, 0.40356445, 0.4934082, 0.39697266, 0.41674805, 0.41015625, 0.375, 0.36914062, 0.40649414]
         )
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-3
-        ), f"output is different from expected, {image_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-3, (
+            f"output is different from expected, {image_slice.flatten()}"
+        )
