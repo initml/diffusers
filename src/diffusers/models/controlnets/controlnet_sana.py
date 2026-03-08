@@ -83,7 +83,9 @@ class SanaControlNetModel(ModelMixin, AttentionMixin, ConfigMixin, PeftAdapterMi
         # 2. Additional condition embeddings
         self.time_embed = AdaLayerNormSingle(inner_dim)
 
-        self.caption_projection = PixArtAlphaTextProjection(in_features=caption_channels, hidden_size=inner_dim)
+        self.caption_projection = PixArtAlphaTextProjection(
+            in_features=caption_channels, hidden_size=inner_dim
+        )
         self.caption_norm = RMSNorm(inner_dim, eps=1e-5, elementwise_affine=True)
 
         # 3. Transformer blocks
@@ -150,7 +152,9 @@ class SanaControlNetModel(ModelMixin, AttentionMixin, ConfigMixin, PeftAdapterMi
 
         # convert encoder_attention_mask to a bias the same way we do for attention_mask
         if encoder_attention_mask is not None and encoder_attention_mask.ndim == 2:
-            encoder_attention_mask = (1 - encoder_attention_mask.to(hidden_states.dtype)) * -10000.0
+            encoder_attention_mask = (
+                1 - encoder_attention_mask.to(hidden_states.dtype)
+            ) * -10000.0
             encoder_attention_mask = encoder_attention_mask.unsqueeze(1)
 
         # 1. Input
@@ -159,14 +163,18 @@ class SanaControlNetModel(ModelMixin, AttentionMixin, ConfigMixin, PeftAdapterMi
         post_patch_height, post_patch_width = height // p, width // p
 
         hidden_states = self.patch_embed(hidden_states)
-        hidden_states = hidden_states + self.input_block(self.patch_embed(controlnet_cond.to(hidden_states.dtype)))
+        hidden_states = hidden_states + self.input_block(
+            self.patch_embed(controlnet_cond.to(hidden_states.dtype))
+        )
 
         timestep, embedded_timestep = self.time_embed(
             timestep, batch_size=batch_size, hidden_dtype=hidden_states.dtype
         )
 
         encoder_hidden_states = self.caption_projection(encoder_hidden_states)
-        encoder_hidden_states = encoder_hidden_states.view(batch_size, -1, hidden_states.shape[-1])
+        encoder_hidden_states = encoder_hidden_states.view(
+            batch_size, -1, hidden_states.shape[-1]
+        )
 
         encoder_hidden_states = self.caption_norm(encoder_hidden_states)
 
@@ -200,13 +208,21 @@ class SanaControlNetModel(ModelMixin, AttentionMixin, ConfigMixin, PeftAdapterMi
 
         # 3. ControlNet blocks
         controlnet_block_res_samples = ()
-        for block_res_sample, controlnet_block in zip(block_res_samples, self.controlnet_blocks):
+        for block_res_sample, controlnet_block in zip(
+            block_res_samples, self.controlnet_blocks
+        ):
             block_res_sample = controlnet_block(block_res_sample)
-            controlnet_block_res_samples = controlnet_block_res_samples + (block_res_sample,)
+            controlnet_block_res_samples = controlnet_block_res_samples + (
+                block_res_sample,
+            )
 
-        controlnet_block_res_samples = [sample * conditioning_scale for sample in controlnet_block_res_samples]
+        controlnet_block_res_samples = [
+            sample * conditioning_scale for sample in controlnet_block_res_samples
+        ]
 
         if not return_dict:
             return (controlnet_block_res_samples,)
 
-        return SanaControlNetOutput(controlnet_block_samples=controlnet_block_res_samples)
+        return SanaControlNetOutput(
+            controlnet_block_samples=controlnet_block_res_samples
+        )

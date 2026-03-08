@@ -9,7 +9,6 @@ from ...utils import (
     is_transformers_available,
 )
 
-
 _dummy_objects = {}
 _import_structure = {}
 
@@ -36,6 +35,7 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
         from ...utils.dummy_torch_and_transformers_objects import *
     else:
         from .pipeline_sana import SanaPipeline
+        from .pipeline_sana_controlnet import SanaControlNetPipeline
         from .pipeline_sana_controlnet import SanaControlNetPipeline
         from .pipeline_sana_sprint import SanaSprintPipeline
         from .pipeline_sana_sprint_img2img import SanaSprintImg2ImgPipeline
