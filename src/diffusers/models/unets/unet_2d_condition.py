@@ -1354,6 +1354,12 @@ class UNet2DConditionModel(
         if is_controlnet:
             sample = sample + mid_block_additional_residual
 
+        if return_post_mid_blocks:
+            if not return_dict:
+                return (sample,)
+
+            return UNet2DConditionOutput(sample=sample)
+
         # 5. up
         for i, upsample_block in enumerate(self.up_blocks):
             is_final_block = i == len(self.up_blocks) - 1
