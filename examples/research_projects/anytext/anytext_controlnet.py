@@ -37,7 +37,7 @@ logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 class AnyTextControlNetConditioningEmbedding(nn.Module):
     """
-    Quoting from https://arxiv.org/abs/2302.05543: "Stable Diffusion uses a pre-processing method similar to VQ-GAN
+    Quoting from https://huggingface.co/papers/2302.05543: "Stable Diffusion uses a pre-processing method similar to VQ-GAN
     [11] to convert the entire dataset of 512 × 512 images into smaller 64 × 64 “latent images” for stabilized
     training. This requires ControlNets to convert image-based conditions to 64 × 64 feature space to match the
     convolution size. We use a tiny network E(·) of four convolution layers with 4 × 4 kernels and 2 × 2 strides
@@ -185,7 +185,7 @@ class AnyTextControlNetModel(ControlNetModel):
             "CrossAttnDownBlock2D",
             "DownBlock2D",
         ),
-        mid_block_type: Optional[str] = "UNetMidBlock2DCrossAttn",
+        mid_block_type: str | None = "UNetMidBlock2DCrossAttn",
         only_cross_attention: Union[bool, Tuple[bool]] = False,
         block_out_channels: Tuple[int, ...] = (320, 640, 1280, 1280),
         layers_per_block: int = 2,
@@ -197,12 +197,12 @@ class AnyTextControlNetModel(ControlNetModel):
         cross_attention_dim: int = 1280,
         transformer_layers_per_block: Union[int, Tuple[int, ...]] = 1,
         encoder_hid_dim: Optional[int] = None,
-        encoder_hid_dim_type: Optional[str] = None,
+        encoder_hid_dim_type: str | None = None,
         attention_head_dim: Union[int, Tuple[int, ...]] = 8,
         num_attention_heads: Optional[Union[int, Tuple[int, ...]]] = None,
         use_linear_projection: bool = False,
-        class_embed_type: Optional[str] = None,
-        addition_embed_type: Optional[str] = None,
+        class_embed_type: str | None = None,
+        addition_embed_type: str | None = None,
         addition_time_embed_dim: Optional[int] = None,
         num_class_embeds: Optional[int] = None,
         upcast_attention: bool = False,

@@ -1,4 +1,4 @@
-# Copyright 2024 Kakao Brain and The HuggingFace Team. All rights reserved.
+# Copyright 2025 Kakao Brain and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import inspect
-from typing import List, Optional, Tuple, Union
 
 import torch
 from torch.nn import functional as F
@@ -24,7 +23,7 @@ from ...models import PriorTransformer, UNet2DConditionModel, UNet2DModel
 from ...schedulers import UnCLIPScheduler
 from ...utils import is_torch_xla_available, logging
 from ...utils.torch_utils import randn_tensor
-from ..pipeline_utils import DiffusionPipeline, ImagePipelineOutput
+from ..pipeline_utils import DeprecatedPipelineMixin, DiffusionPipeline, ImagePipelineOutput
 from .text_proj import UnCLIPTextProjModel
 
 
@@ -38,7 +37,7 @@ else:
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
-class UnCLIPPipeline(DiffusionPipeline):
+class UnCLIPPipeline(DeprecatedPipelineMixin, DiffusionPipeline):
     """
     Pipeline for text-to-image generation using unCLIP.
 
@@ -69,6 +68,7 @@ class UnCLIPPipeline(DiffusionPipeline):
 
     """
 
+    _last_supported_version = "0.33.1"
     _exclude_from_cpu_offload = ["prior"]
 
     prior: PriorTransformer
@@ -130,8 +130,8 @@ class UnCLIPPipeline(DiffusionPipeline):
         device,
         num_images_per_prompt,
         do_classifier_free_guidance,
-        text_model_output: Optional[Union[CLIPTextModelOutput, Tuple]] = None,
-        text_attention_mask: Optional[torch.Tensor] = None,
+        text_model_output: CLIPTextModelOutput | tuple | None = None,
+        text_attention_mask: torch.Tensor | None = None,
     ):
         if text_model_output is None:
             batch_size = len(prompt) if isinstance(prompt, list) else 1
@@ -218,27 +218,27 @@ class UnCLIPPipeline(DiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
-        prompt: Optional[Union[str, List[str]]] = None,
+        prompt: str | list[str] | None = None,
         num_images_per_prompt: int = 1,
         prior_num_inference_steps: int = 25,
         decoder_num_inference_steps: int = 25,
         super_res_num_inference_steps: int = 7,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        prior_latents: Optional[torch.Tensor] = None,
-        decoder_latents: Optional[torch.Tensor] = None,
-        super_res_latents: Optional[torch.Tensor] = None,
-        text_model_output: Optional[Union[CLIPTextModelOutput, Tuple]] = None,
-        text_attention_mask: Optional[torch.Tensor] = None,
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        prior_latents: torch.Tensor | None = None,
+        decoder_latents: torch.Tensor | None = None,
+        super_res_latents: torch.Tensor | None = None,
+        text_model_output: CLIPTextModelOutput | tuple | None = None,
+        text_attention_mask: torch.Tensor | None = None,
         prior_guidance_scale: float = 4.0,
         decoder_guidance_scale: float = 8.0,
-        output_type: Optional[str] = "pil",
+        output_type: str | None = "pil",
         return_dict: bool = True,
     ):
         """
         The call function to the pipeline for generation.
 
         Args:
-            prompt (`str` or `List[str]`):
+            prompt (`str` or `list[str]`):
                 The prompt or prompts to guide image generation. This can only be left undefined if `text_model_output`
                 and `text_attention_mask` is passed.
             num_images_per_prompt (`int`, *optional*, defaults to 1):
@@ -252,7 +252,7 @@ class UnCLIPPipeline(DiffusionPipeline):
             super_res_num_inference_steps (`int`, *optional*, defaults to 7):
                 The number of denoising steps for super resolution. More denoising steps usually lead to a higher
                 quality image at the expense of slower inference.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 A [`torch.Generator`](https://pytorch.org/docs/stable/generated/torch.Generator.html) to make
                 generation deterministic.
             prior_latents (`torch.Tensor` of shape (batch size, embeddings dimension), *optional*):

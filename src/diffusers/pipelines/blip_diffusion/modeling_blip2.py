@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,10 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional, Tuple, Union
-
 import torch
-import torch.utils.checkpoint
 from torch import nn
 from transformers import BertTokenizer
 from transformers.activations import QuickGELUActivation as QuickGELU
@@ -373,11 +370,11 @@ class Blip2VisionModel(Blip2PreTrainedModel):
     @replace_return_docstrings(output_type=BaseModelOutputWithPooling, config_class=Blip2VisionConfig)
     def forward(
         self,
-        pixel_values: Optional[torch.Tensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Union[Tuple, BaseModelOutputWithPooling]:
+        pixel_values: torch.Tensor | None = None,
+        output_attentions: bool | None = None,
+        output_hidden_states: bool | None = None,
+        return_dict: bool | None = None,
+    ) -> tuple | BaseModelOutputWithPooling:
         r"""
         Returns:
 
@@ -465,7 +462,7 @@ class Blip2QFormerModel(Blip2PreTrainedModel):
     def get_extended_attention_mask(
         self,
         attention_mask: torch.Tensor,
-        input_shape: Tuple[int],
+        input_shape: tuple[int],
         device: torch.device,
         has_query: bool = False,
     ) -> torch.Tensor:
@@ -475,7 +472,7 @@ class Blip2QFormerModel(Blip2PreTrainedModel):
         Arguments:
             attention_mask (`torch.Tensor`):
                 Mask with ones indicating tokens to attend to, zeros for tokens to ignore.
-            input_shape (`Tuple[int]`):
+            input_shape (`tuple[int]`):
                 The shape of the input to the model.
             device (`torch.device`):
                 The device of the input to the model.

@@ -18,7 +18,7 @@ https://github.com/huggingface/transformers/blob/52cb4034ada381fe1ffe8d428a1076e
 """
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from ..utils import is_torch_available
 from .quantization_config import QuantizationConfigMixin
@@ -40,9 +40,9 @@ class DiffusersQuantizer(ABC):
     Attributes
         quantization_config (`diffusers.quantizers.quantization_config.QuantizationConfigMixin`):
             The quantization config that defines the quantization parameters of your model that you want to quantize.
-        modules_to_not_convert (`List[str]`, *optional*):
+        modules_to_not_convert (`list[str]`, *optional*):
             The list of module names to not convert when quantizing the model.
-        required_packages (`List[str]`, *optional*):
+        required_packages (`list[str]`, *optional*):
             The list of required pip packages to install prior to using the quantizer
         requires_calibration (`bool`):
             Whether the quantization method requires to calibrate the model before using it.
@@ -76,14 +76,14 @@ class DiffusersQuantizer(ABC):
         """
         return torch_dtype
 
-    def update_device_map(self, device_map: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def update_device_map(self, device_map: dict[str, Any] | None) -> dict[str, Any] | None:
         """
         Override this method if you want to pass a override the existing device map with a new one. E.g. for
         bitsandbytes, since `accelerate` is a hard requirement, if no device_map is passed, the device_map is set to
         `"auto"``
 
         Args:
-            device_map (`Union[dict, str]`, *optional*):
+            device_map (`dict | str`, *optional*):
                 The device_map that is passed through the `from_pretrained` method.
         """
         return device_map
@@ -100,17 +100,17 @@ class DiffusersQuantizer(ABC):
         """
         return torch_dtype
 
-    def update_missing_keys(self, model, missing_keys: List[str], prefix: str) -> List[str]:
+    def update_missing_keys(self, model, missing_keys: list[str], prefix: str) -> list[str]:
         """
         Override this method if you want to adjust the `missing_keys`.
 
         Args:
-            missing_keys (`List[str]`, *optional*):
+            missing_keys (`list[str]`, *optional*):
                 The list of missing keys in the checkpoint compared to the state dict of the model
         """
         return missing_keys
 
-    def get_special_dtypes_update(self, model, torch_dtype: "torch.dtype") -> Dict[str, "torch.dtype"]:
+    def get_special_dtypes_update(self, model, torch_dtype: "torch.dtype") -> dict[str, "torch.dtype"]:
         """
         returns dtypes for modules that are not quantized - used for the computation of the device_map in case one
         passes a str as a device_map. The method will use the `modules_to_not_convert` that is modified in
@@ -130,7 +130,7 @@ class DiffusersQuantizer(ABC):
             if any(m in name for m in self.modules_to_not_convert)
         }
 
-    def adjust_max_memory(self, max_memory: Dict[str, Union[int, str]]) -> Dict[str, Union[int, str]]:
+    def adjust_max_memory(self, max_memory: dict[str, int | str]) -> dict[str, int | str]:
         """adjust max_memory argument for infer_auto_device_map() if extra memory is needed for quantization"""
         return max_memory
 
@@ -139,7 +139,7 @@ class DiffusersQuantizer(ABC):
         model: "ModelMixin",
         param_value: "torch.Tensor",
         param_name: str,
-        state_dict: Dict[str, Any],
+        state_dict: dict[str, Any],
         **kwargs,
     ) -> bool:
         """
@@ -199,7 +199,7 @@ class DiffusersQuantizer(ABC):
 
     def dequantize(self, model):
         """
-        Potentially dequantize the model to retrive the original model, with some loss in accuracy / performance. Note
+        Potentially dequantize the model to retrieve the original model, with some loss in accuracy / performance. Note
         not all quantization schemes support this.
         """
         model = self._dequantize(model)
@@ -209,25 +209,37 @@ class DiffusersQuantizer(ABC):
 
         return model
 
+    def get_cuda_warm_up_factor(self):
+        """
+        The factor to be used in `caching_allocator_warmup` to get the number of bytes to pre-allocate to warm up cuda.
+        A factor of 2 means we allocate all bytes in the empty model (since we allocate in fp16), a factor of 4 means
+        we allocate half the memory of the weights residing in the empty model, etc...
+        """
+        # By default we return 4, i.e. half the model size (this corresponds to the case where the model is not
+        # really pre-processed, i.e. we do not have the info that weights are going to be 8 bits before actual
+        # weight loading)
+        return 4
+
     def _dequantize(self, model):
         raise NotImplementedError(
             f"{self.quantization_config.quant_method} has no implementation of `dequantize`, please raise an issue on GitHub."
         )
 
     @abstractmethod
-    def _process_model_before_weight_loading(self, model, **kwargs):
-        ...
+    def _process_model_before_weight_loading(self, model, **kwargs): ...
 
     @abstractmethod
-    def _process_model_after_weight_loading(self, model, **kwargs):
-        ...
+    def _process_model_after_weight_loading(self, model, **kwargs): ...
 
     @property
     @abstractmethod
-    def is_serializable(self):
-        ...
+    def is_serializable(self): ...
 
     @property
     @abstractmethod
-    def is_trainable(self):
-        ...
+    def is_trainable(self): ...
+
+    @property
+    def is_compileable(self) -> bool:
+        """Flag indicating whether the quantized model can be compiled"""
+        return False

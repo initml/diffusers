@@ -1,5 +1,3 @@
-from typing import Optional
-
 import numpy as np
 import torch
 from torch import nn
@@ -13,7 +11,7 @@ from ...models import ModelMixin
 # Modified from ClipCaptionModel in https://github.com/thu-ml/unidiffuser/blob/main/libs/caption_decoder.py
 class UniDiffuserTextDecoder(ModelMixin, ConfigMixin, ModuleUtilsMixin):
     """
-    Text decoder model for a image-text [UniDiffuser](https://arxiv.org/pdf/2303.06555.pdf) model. This is used to
+    Text decoder model for a image-text [UniDiffuser](https://huggingface.co/papers/2303.06555) model. This is used to
     generate text from the UniDiffuser image-text embedding.
 
     Parameters:
@@ -68,13 +66,13 @@ class UniDiffuserTextDecoder(ModelMixin, ConfigMixin, ModuleUtilsMixin):
         self,
         prefix_length: int,
         prefix_inner_dim: int,
-        prefix_hidden_dim: Optional[int] = None,
+        prefix_hidden_dim: int | None = None,
         vocab_size: int = 50257,  # Start of GPT2 config args
         n_positions: int = 1024,
         n_embd: int = 768,
         n_layer: int = 12,
         n_head: int = 12,
-        n_inner: Optional[int] = None,
+        n_inner: int | None = None,
         activation_function: str = "gelu_new",
         resid_pdrop: float = 0.1,
         embd_pdrop: float = 0.1,
@@ -132,15 +130,15 @@ class UniDiffuserTextDecoder(ModelMixin, ConfigMixin, ModuleUtilsMixin):
         self,
         input_ids: torch.Tensor,
         prefix_embeds: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
+        labels: torch.Tensor | None = None,
     ):
         """
         Args:
             input_ids (`torch.Tensor` of shape `(N, max_seq_len)`):
                 Text tokens to use for inference.
             prefix_embeds (`torch.Tensor` of shape `(N, prefix_length, 768)`):
-                Prefix embedding to preprend to the embedded tokens.
+                Prefix embedding to prepend to the embedded tokens.
             attention_mask (`torch.Tensor` of shape `(N, prefix_length + max_seq_len, 768)`, *optional*):
                 Attention mask for the prefix embedding.
             labels (`torch.Tensor`, *optional*):
@@ -180,7 +178,7 @@ class UniDiffuserTextDecoder(ModelMixin, ConfigMixin, ModuleUtilsMixin):
                 Device to perform text generation on.
 
         Returns:
-            `List[str]`: A list of strings generated from the decoder model.
+            `list[str]`: A list of strings generated from the decoder model.
         """
 
         features = torch.split(features, 1, dim=0)
@@ -207,7 +205,7 @@ class UniDiffuserTextDecoder(ModelMixin, ConfigMixin, ModuleUtilsMixin):
         beam_size: int = 5,
         entry_length: int = 67,
         temperature: float = 1.0,
-        eos_token_id: Optional[int] = None,
+        eos_token_id: int | None = None,
     ):
         """
         Generates text using the given tokenizer and text prompt or token embedding via beam search. This
@@ -233,7 +231,7 @@ class UniDiffuserTextDecoder(ModelMixin, ConfigMixin, ModuleUtilsMixin):
                 The temperature to use when performing the softmax over logits from the decoding model.
 
         Returns:
-            `Tuple(torch.Tensor, torch.Tensor)`: A tuple of tensors where the first element is a tensor of generated
+            `tuple(torch.Tensor, torch.Tensor)`: A tuple of tensors where the first element is a tensor of generated
             token sequences sorted by score in descending order, and the second element is the sequence lengths
             corresponding to those sequences.
         """

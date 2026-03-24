@@ -1,4 +1,4 @@
-# Copyright 2024 Black Forest Labs, The HuggingFace Team and The InstantX Team. All rights reserved.
+# Copyright 2025 Black Forest Labs, The HuggingFace Team and The InstantX Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,19 +13,23 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
 
 from ...configuration_utils import ConfigMixin, register_to_config
 from ...loaders import PeftAdapterMixin
-from ...models.attention_processor import AttentionProcessor
-from ...models.modeling_utils import ModelMixin
-from ...utils import USE_PEFT_BACKEND, BaseOutput, logging, scale_lora_layers, unscale_lora_layers
+from ...utils import (
+    BaseOutput,
+    apply_lora_scale,
+    logging,
+)
+from ..attention import AttentionMixin
 from ..controlnets.controlnet import ControlNetConditioningEmbedding, zero_module
 from ..embeddings import CombinedTimestepGuidanceTextProjEmbeddings, CombinedTimestepTextProjEmbeddings, FluxPosEmbed
 from ..modeling_outputs import Transformer2DModelOutput
+from ..modeling_utils import ModelMixin
 from ..transformers.transformer_flux import FluxSingleTransformerBlock, FluxTransformerBlock
 
 
@@ -34,11 +38,11 @@ logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 @dataclass
 class FluxControlNetOutput(BaseOutput):
-    controlnet_block_samples: Tuple[torch.Tensor]
-    controlnet_single_block_samples: Tuple[torch.Tensor]
+    controlnet_block_samples: tuple[torch.Tensor]
+    controlnet_single_block_samples: tuple[torch.Tensor]
 
 
-class FluxControlNetModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
+class FluxControlNetModel(ModelMixin, AttentionMixin, ConfigMixin, PeftAdapterMixin):
     _supports_gradient_checkpointing = True
 
     @register_to_config
@@ -53,7 +57,7 @@ class FluxControlNetModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
         joint_attention_dim: int = 4096,
         pooled_projection_dim: int = 768,
         guidance_embeds: bool = False,
-        axes_dims_rope: List[int] = [16, 56, 56],
+        axes_dims_rope: list[int] = [16, 56, 56],
         num_mode: int = None,
         conditioning_embedding_channels: int = None,
     ):
@@ -118,66 +122,6 @@ class FluxControlNetModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
 
         self.gradient_checkpointing = False
 
-    @property
-    # Copied from diffusers.models.unets.unet_2d_condition.UNet2DConditionModel.attn_processors
-    def attn_processors(self):
-        r"""
-        Returns:
-            `dict` of attention processors: A dictionary containing all attention processors used in the model with
-            indexed by its weight name.
-        """
-        # set recursively
-        processors = {}
-
-        def fn_recursive_add_processors(name: str, module: torch.nn.Module, processors: Dict[str, AttentionProcessor]):
-            if hasattr(module, "get_processor"):
-                processors[f"{name}.processor"] = module.get_processor()
-
-            for sub_name, child in module.named_children():
-                fn_recursive_add_processors(f"{name}.{sub_name}", child, processors)
-
-            return processors
-
-        for name, module in self.named_children():
-            fn_recursive_add_processors(name, module, processors)
-
-        return processors
-
-    # Copied from diffusers.models.unets.unet_2d_condition.UNet2DConditionModel.set_attn_processor
-    def set_attn_processor(self, processor):
-        r"""
-        Sets the attention processor to use to compute attention.
-
-        Parameters:
-            processor (`dict` of `AttentionProcessor` or only `AttentionProcessor`):
-                The instantiated processor class or a dictionary of processor classes that will be set as the processor
-                for **all** `Attention` layers.
-
-                If `processor` is a dict, the key needs to define the path to the corresponding cross attention
-                processor. This is strongly recommended when setting trainable attention processors.
-
-        """
-        count = len(self.attn_processors.keys())
-
-        if isinstance(processor, dict) and len(processor) != count:
-            raise ValueError(
-                f"A dict of processors was passed, but the number of processors {len(processor)} does not match the"
-                f" number of attention layers: {count}. Please make sure to pass {count} processor classes."
-            )
-
-        def fn_recursive_attn_processor(name: str, module: torch.nn.Module, processor):
-            if hasattr(module, "set_processor"):
-                if not isinstance(processor, dict):
-                    module.set_processor(processor)
-                else:
-                    module.set_processor(processor.pop(f"{name}.processor"))
-
-            for sub_name, child in module.named_children():
-                fn_recursive_attn_processor(f"{name}.{sub_name}", child, processor)
-
-        for name, module in self.named_children():
-            fn_recursive_attn_processor(name, module, processor)
-
     @classmethod
     def from_transformer(
         cls,
@@ -210,6 +154,7 @@ class FluxControlNetModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
 
         return controlnet
 
+    @apply_lora_scale("joint_attention_kwargs")
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -222,9 +167,9 @@ class FluxControlNetModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
         img_ids: torch.Tensor = None,
         txt_ids: torch.Tensor = None,
         guidance: torch.Tensor = None,
-        joint_attention_kwargs: Optional[Dict[str, Any]] = None,
+        joint_attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
-    ) -> Union[torch.FloatTensor, Transformer2DModelOutput]:
+    ) -> torch.FloatTensor | Transformer2DModelOutput:
         """
         The [`FluxTransformer2DModel`] forward method.
 
@@ -257,20 +202,6 @@ class FluxControlNetModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
             If `return_dict` is True, an [`~models.transformer_2d.Transformer2DModelOutput`] is returned, otherwise a
             `tuple` where the first element is the sample tensor.
         """
-        if joint_attention_kwargs is not None:
-            joint_attention_kwargs = joint_attention_kwargs.copy()
-            lora_scale = joint_attention_kwargs.pop("scale", 1.0)
-        else:
-            lora_scale = 1.0
-
-        if USE_PEFT_BACKEND:
-            # weight the lora layers by setting `lora_scale` for each PEFT layer
-            scale_lora_layers(self, lora_scale)
-        else:
-            if joint_attention_kwargs is not None and joint_attention_kwargs.get("scale", None) is not None:
-                logger.warning(
-                    "Passing `scale` via `joint_attention_kwargs` when not using the PEFT backend is ineffective."
-                )
         hidden_states = self.x_embedder(hidden_states)
 
         if self.input_hint_block is not None:
@@ -298,15 +229,6 @@ class FluxControlNetModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
         )
         encoder_hidden_states = self.context_embedder(encoder_hidden_states)
 
-        if self.union:
-            # union mode
-            if controlnet_mode is None:
-                raise ValueError("`controlnet_mode` cannot be `None` when applying ControlNet-Union")
-            # union mode emb
-            controlnet_mode_emb = self.controlnet_mode_embedder(controlnet_mode)
-            encoder_hidden_states = torch.cat([controlnet_mode_emb, encoder_hidden_states], dim=1)
-            txt_ids = torch.cat([txt_ids[:1], txt_ids], dim=0)
-
         if txt_ids.ndim == 3:
             logger.warning(
                 "Passing `txt_ids` 3d torch.Tensor is deprecated."
@@ -319,6 +241,15 @@ class FluxControlNetModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
                 "Please remove the batch dimension and pass it as a 2d torch Tensor"
             )
             img_ids = img_ids[0]
+
+        if self.union:
+            # union mode
+            if controlnet_mode is None:
+                raise ValueError("`controlnet_mode` cannot be `None` when applying ControlNet-Union")
+            # union mode emb
+            controlnet_mode_emb = self.controlnet_mode_embedder(controlnet_mode)
+            encoder_hidden_states = torch.cat([controlnet_mode_emb, encoder_hidden_states], dim=1)
+            txt_ids = torch.cat([txt_ids[:1], txt_ids], dim=0)
 
         ids = torch.cat((txt_ids, img_ids), dim=0)
         image_rotary_emb = self.pos_embed(ids)
@@ -343,25 +274,25 @@ class FluxControlNetModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
                 )
             block_samples = block_samples + (hidden_states,)
 
-        hidden_states = torch.cat([encoder_hidden_states, hidden_states], dim=1)
-
         single_block_samples = ()
         for index_block, block in enumerate(self.single_transformer_blocks):
             if torch.is_grad_enabled() and self.gradient_checkpointing:
-                hidden_states = self._gradient_checkpointing_func(
+                encoder_hidden_states, hidden_states = self._gradient_checkpointing_func(
                     block,
                     hidden_states,
+                    encoder_hidden_states,
                     temb,
                     image_rotary_emb,
                 )
 
             else:
-                hidden_states = block(
+                encoder_hidden_states, hidden_states = block(
                     hidden_states=hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,
                     temb=temb,
                     image_rotary_emb=image_rotary_emb,
                 )
-            single_block_samples = single_block_samples + (hidden_states[:, encoder_hidden_states.shape[1] :],)
+            single_block_samples = single_block_samples + (hidden_states,)
 
         # controlnet block
         controlnet_block_samples = ()
@@ -383,10 +314,6 @@ class FluxControlNetModel(ModelMixin, ConfigMixin, PeftAdapterMixin):
             None if len(controlnet_single_block_samples) == 0 else controlnet_single_block_samples
         )
 
-        if USE_PEFT_BACKEND:
-            # remove `lora_scale` from each PEFT layer
-            unscale_lora_layers(self, lora_scale)
-
         if not return_dict:
             return (controlnet_block_samples, controlnet_single_block_samples)
 
@@ -404,7 +331,7 @@ class FluxMultiControlNetModel(ModelMixin):
     compatible with `FluxControlNetModel`.
 
     Args:
-        controlnets (`List[FluxControlNetModel]`):
+        controlnets (`list[FluxControlNetModel]`):
             Provides additional conditioning to the unet during the denoising process. You must set multiple
             `FluxControlNetModel` as a list.
     """
@@ -416,21 +343,21 @@ class FluxMultiControlNetModel(ModelMixin):
     def forward(
         self,
         hidden_states: torch.FloatTensor,
-        controlnet_cond: List[torch.tensor],
-        controlnet_mode: List[torch.tensor],
-        conditioning_scale: List[float],
+        controlnet_cond: list[torch.tensor],
+        controlnet_mode: list[torch.tensor],
+        conditioning_scale: list[float],
         encoder_hidden_states: torch.Tensor = None,
         pooled_projections: torch.Tensor = None,
         timestep: torch.LongTensor = None,
         img_ids: torch.Tensor = None,
         txt_ids: torch.Tensor = None,
         guidance: torch.Tensor = None,
-        joint_attention_kwargs: Optional[Dict[str, Any]] = None,
+        joint_attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
-    ) -> Union[FluxControlNetOutput, Tuple]:
+    ) -> FluxControlNetOutput | tuple:
         # ControlNet-Union with multiple conditions
         # only load one ControlNet for saving memories
-        if len(self.nets) == 1 and self.nets[0].union:
+        if len(self.nets) == 1:
             controlnet = self.nets[0]
 
             for i, (image, mode, scale) in enumerate(zip(controlnet_cond, controlnet_mode, conditioning_scale)):
@@ -454,17 +381,18 @@ class FluxMultiControlNetModel(ModelMixin):
                     control_block_samples = block_samples
                     control_single_block_samples = single_block_samples
                 else:
-                    control_block_samples = [
-                        control_block_sample + block_sample
-                        for control_block_sample, block_sample in zip(control_block_samples, block_samples)
-                    ]
-
-                    control_single_block_samples = [
-                        control_single_block_sample + block_sample
-                        for control_single_block_sample, block_sample in zip(
-                            control_single_block_samples, single_block_samples
-                        )
-                    ]
+                    if block_samples is not None and control_block_samples is not None:
+                        control_block_samples = [
+                            control_block_sample + block_sample
+                            for control_block_sample, block_sample in zip(control_block_samples, block_samples)
+                        ]
+                    if single_block_samples is not None and control_single_block_samples is not None:
+                        control_single_block_samples = [
+                            control_single_block_sample + block_sample
+                            for control_single_block_sample, block_sample in zip(
+                                control_single_block_samples, single_block_samples
+                            )
+                        ]
 
         # Regular Multi-ControlNets
         # load all ControlNets into memories

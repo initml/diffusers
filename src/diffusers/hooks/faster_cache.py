@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,13 +14,14 @@
 
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable
 
 import torch
 
-from ..models.attention_processor import Attention, MochiAttention
+from ..models.attention import AttentionModuleMixin
 from ..models.modeling_outputs import Transformer2DModelOutput
 from ..utils import logging
+from ._common import _ATTENTION_CLASSES
 from .hooks import HookRegistry, ModelHook
 
 
@@ -29,7 +30,6 @@ logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 _FASTER_CACHE_DENOISER_HOOK = "faster_cache_denoiser"
 _FASTER_CACHE_BLOCK_HOOK = "faster_cache_block"
-_ATTENTION_CLASSES = (Attention, MochiAttention)
 _SPATIAL_ATTENTION_BLOCK_IDENTIFIERS = (
     "^blocks.*attn",
     "^transformer_blocks.*attn",
@@ -54,13 +54,13 @@ class FasterCacheConfig:
     Attributes:
         spatial_attention_block_skip_range (`int`, defaults to `2`):
             Calculate the attention states every `N` iterations. If this is set to `N`, the attention computation will
-            be skipped `N - 1` times (i.e., cached attention states will be re-used) before computing the new attention
+            be skipped `N - 1` times (i.e., cached attention states will be reused) before computing the new attention
             states again.
         temporal_attention_block_skip_range (`int`, *optional*, defaults to `None`):
             Calculate the attention states every `N` iterations. If this is set to `N`, the attention computation will
-            be skipped `N - 1` times (i.e., cached attention states will be re-used) before computing the new attention
+            be skipped `N - 1` times (i.e., cached attention states will be reused) before computing the new attention
             states again.
-        spatial_attention_timestep_skip_range (`Tuple[float, float]`, defaults to `(-1, 681)`):
+        spatial_attention_timestep_skip_range (`tuple[float, float]`, defaults to `(-1, 681)`):
             The timestep range within which the spatial attention computation can be skipped without a significant loss
             in quality. This is to be determined by the user based on the underlying model. The first value in the
             tuple is the lower bound and the second value is the upper bound. Typically, diffusion timesteps for
@@ -68,17 +68,17 @@ class FasterCacheConfig:
             timestep 0). For the default values, this would mean that the spatial attention computation skipping will
             be applicable only after denoising timestep 681 is reached, and continue until the end of the denoising
             process.
-        temporal_attention_timestep_skip_range (`Tuple[float, float]`, *optional*, defaults to `None`):
+        temporal_attention_timestep_skip_range (`tuple[float, float]`, *optional*, defaults to `None`):
             The timestep range within which the temporal attention computation can be skipped without a significant
             loss in quality. This is to be determined by the user based on the underlying model. The first value in the
             tuple is the lower bound and the second value is the upper bound. Typically, diffusion timesteps for
             denoising are in the reversed range of 0 to 1000 (i.e. denoising starts at timestep 1000 and ends at
             timestep 0).
-        low_frequency_weight_update_timestep_range (`Tuple[int, int]`, defaults to `(99, 901)`):
+        low_frequency_weight_update_timestep_range (`tuple[int, int]`, defaults to `(99, 901)`):
             The timestep range within which the low frequency weight scaling update is applied. The first value in the
             tuple is the lower bound and the second value is the upper bound of the timestep range. The callback
             function for the update is called only within this range.
-        high_frequency_weight_update_timestep_range (`Tuple[int, int]`, defaults to `(-1, 301)`):
+        high_frequency_weight_update_timestep_range (`tuple[int, int]`, defaults to `(-1, 301)`):
             The timestep range within which the high frequency weight scaling update is applied. The first value in the
             tuple is the lower bound and the second value is the upper bound of the timestep range. The callback
             function for the update is called only within this range.
@@ -90,17 +90,17 @@ class FasterCacheConfig:
             from the conditional branch outputs.
         unconditional_batch_skip_range (`int`, defaults to `5`):
             Process the unconditional branch every `N` iterations. If this is set to `N`, the unconditional branch
-            computation will be skipped `N - 1` times (i.e., cached unconditional branch states will be re-used) before
+            computation will be skipped `N - 1` times (i.e., cached unconditional branch states will be reused) before
             computing the new unconditional branch states again.
-        unconditional_batch_timestep_skip_range (`Tuple[float, float]`, defaults to `(-1, 641)`):
+        unconditional_batch_timestep_skip_range (`tuple[float, float]`, defaults to `(-1, 641)`):
             The timestep range within which the unconditional branch computation can be skipped without a significant
             loss in quality. This is to be determined by the user based on the underlying model. The first value in the
             tuple is the lower bound and the second value is the upper bound.
-        spatial_attention_block_identifiers (`Tuple[str, ...]`, defaults to `("blocks.*attn1", "transformer_blocks.*attn1", "single_transformer_blocks.*attn1")`):
+        spatial_attention_block_identifiers (`tuple[str, ...]`, defaults to `("blocks.*attn1", "transformer_blocks.*attn1", "single_transformer_blocks.*attn1")`):
             The identifiers to match the spatial attention blocks in the model. If the name of the block contains any
             of these identifiers, FasterCache will be applied to that block. This can either be the full layer names,
             partial layer names, or regex patterns. Matching will always be done using a regex match.
-        temporal_attention_block_identifiers (`Tuple[str, ...]`, defaults to `("temporal_transformer_blocks.*attn1",)`):
+        temporal_attention_block_identifiers (`tuple[str, ...]`, defaults to `("temporal_transformer_blocks.*attn1",)`):
             The identifiers to match the temporal attention blocks in the model. If the name of the block contains any
             of these identifiers, FasterCache will be applied to that block. This can either be the full layer names,
             partial layer names, or regex patterns. Matching will always be done using a regex match.
@@ -123,7 +123,7 @@ class FasterCacheConfig:
         is_guidance_distilled (`bool`, defaults to `False`):
             Whether the model is guidance distilled or not. If the model is guidance distilled, FasterCache will not be
             applied at the denoiser-level to skip the unconditional branch computation (as there is none).
-        _unconditional_conditional_input_kwargs_identifiers (`List[str]`, defaults to `("hidden_states", "encoder_hidden_states", "timestep", "attention_mask", "encoder_attention_mask")`):
+        _unconditional_conditional_input_kwargs_identifiers (`list[str]`, defaults to `("hidden_states", "encoder_hidden_states", "timestep", "attention_mask", "encoder_attention_mask")`):
             The identifiers to match the input kwargs that contain the batchwise-concatenated unconditional and
             conditional inputs. If the name of the input kwargs contains any of these identifiers, FasterCache will
             split the inputs into unconditional and conditional branches. This must be a list of exact input kwargs
@@ -133,25 +133,25 @@ class FasterCacheConfig:
     # In the paper and codebase, they hardcode these values to 2. However, it can be made configurable
     # after some testing. We default to 2 if these parameters are not provided.
     spatial_attention_block_skip_range: int = 2
-    temporal_attention_block_skip_range: Optional[int] = None
+    temporal_attention_block_skip_range: int | None = None
 
-    spatial_attention_timestep_skip_range: Tuple[int, int] = (-1, 681)
-    temporal_attention_timestep_skip_range: Tuple[int, int] = (-1, 681)
+    spatial_attention_timestep_skip_range: tuple[int, int] = (-1, 681)
+    temporal_attention_timestep_skip_range: tuple[int, int] = (-1, 681)
 
     # Indicator functions for low/high frequency as mentioned in Equation 11 of the paper
-    low_frequency_weight_update_timestep_range: Tuple[int, int] = (99, 901)
-    high_frequency_weight_update_timestep_range: Tuple[int, int] = (-1, 301)
+    low_frequency_weight_update_timestep_range: tuple[int, int] = (99, 901)
+    high_frequency_weight_update_timestep_range: tuple[int, int] = (-1, 301)
 
     # ⍺1 and ⍺2 as mentioned in Equation 11 of the paper
     alpha_low_frequency: float = 1.1
     alpha_high_frequency: float = 1.1
 
-    # n as described in CFG-Cache explanation in the paper - dependant on the model
+    # n as described in CFG-Cache explanation in the paper - dependent on the model
     unconditional_batch_skip_range: int = 5
-    unconditional_batch_timestep_skip_range: Tuple[int, int] = (-1, 641)
+    unconditional_batch_timestep_skip_range: tuple[int, int] = (-1, 641)
 
-    spatial_attention_block_identifiers: Tuple[str, ...] = _SPATIAL_ATTENTION_BLOCK_IDENTIFIERS
-    temporal_attention_block_identifiers: Tuple[str, ...] = _TEMPORAL_ATTENTION_BLOCK_IDENTIFIERS
+    spatial_attention_block_identifiers: tuple[str, ...] = _SPATIAL_ATTENTION_BLOCK_IDENTIFIERS
+    temporal_attention_block_identifiers: tuple[str, ...] = _TEMPORAL_ATTENTION_BLOCK_IDENTIFIERS
 
     attention_weight_callback: Callable[[torch.nn.Module], float] = None
     low_frequency_weight_callback: Callable[[torch.nn.Module], float] = None
@@ -162,7 +162,7 @@ class FasterCacheConfig:
 
     current_timestep_callback: Callable[[], int] = None
 
-    _unconditional_conditional_input_kwargs_identifiers: List[str] = _UNCOND_COND_INPUT_KWARGS_IDENTIFIERS
+    _unconditional_conditional_input_kwargs_identifiers: list[str] = _UNCOND_COND_INPUT_KWARGS_IDENTIFIERS
 
     def __repr__(self) -> str:
         return (
@@ -209,7 +209,7 @@ class FasterCacheBlockState:
     def __init__(self) -> None:
         self.iteration: int = 0
         self.batch_size: int = None
-        self.cache: Tuple[torch.Tensor, torch.Tensor] = None
+        self.cache: tuple[torch.Tensor, torch.Tensor] = None
 
     def reset(self):
         self.iteration = 0
@@ -223,10 +223,10 @@ class FasterCacheDenoiserHook(ModelHook):
     def __init__(
         self,
         unconditional_batch_skip_range: int,
-        unconditional_batch_timestep_skip_range: Tuple[int, int],
+        unconditional_batch_timestep_skip_range: tuple[int, int],
         tensor_format: str,
         is_guidance_distilled: bool,
-        uncond_cond_input_kwargs_identifiers: List[str],
+        uncond_cond_input_kwargs_identifiers: list[str],
         current_timestep_callback: Callable[[], int],
         low_frequency_weight_callback: Callable[[torch.nn.Module], torch.Tensor],
         high_frequency_weight_callback: Callable[[torch.nn.Module], torch.Tensor],
@@ -252,7 +252,7 @@ class FasterCacheDenoiserHook(ModelHook):
         return module
 
     @staticmethod
-    def _get_cond_input(input: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _get_cond_input(input: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # Note: this method assumes that the input tensor is batchwise-concatenated with unconditional inputs
         # followed by conditional inputs.
         _, cond = input.chunk(2, dim=0)
@@ -371,7 +371,7 @@ class FasterCacheBlockHook(ModelHook):
     def __init__(
         self,
         block_skip_range: int,
-        timestep_skip_range: Tuple[int, int],
+        timestep_skip_range: tuple[int, int],
         is_guidance_distilled: bool,
         weight_callback: Callable[[torch.nn.Module], float],
         current_timestep_callback: Callable[[], int],
@@ -488,9 +488,10 @@ def apply_faster_cache(module: torch.nn.Module, config: FasterCacheConfig) -> No
     Applies [FasterCache](https://huggingface.co/papers/2410.19355) to a given pipeline.
 
     Args:
-        pipeline (`DiffusionPipeline`):
-            The diffusion pipeline to apply FasterCache to.
-        config (`Optional[FasterCacheConfig]`, `optional`, defaults to `None`):
+        module (`torch.nn.Module`):
+            The pytorch module to apply FasterCache to. Typically, this should be a transformer architecture supported
+            in Diffusers, such as `CogVideoXTransformer3DModel`, but external implementations may also work.
+        config (`FasterCacheConfig`):
             The configuration to use for FasterCache.
 
     Example:
@@ -588,7 +589,7 @@ def _apply_faster_cache_on_denoiser(module: torch.nn.Module, config: FasterCache
     registry.register_hook(hook, _FASTER_CACHE_DENOISER_HOOK)
 
 
-def _apply_faster_cache_on_attention_class(name: str, module: Attention, config: FasterCacheConfig) -> None:
+def _apply_faster_cache_on_attention_class(name: str, module: AttentionModuleMixin, config: FasterCacheConfig) -> None:
     is_spatial_self_attention = (
         any(re.search(identifier, name) is not None for identifier in config.spatial_attention_block_identifiers)
         and config.spatial_attention_block_skip_range is not None

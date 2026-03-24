@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import math
-from typing import Tuple, Union
 
 import torch
 import torch.fft as fft
@@ -33,7 +32,7 @@ class FreeInitMixin:
         spatial_stop_frequency: float = 0.25,
         temporal_stop_frequency: float = 0.25,
     ):
-        """Enables the FreeInit mechanism as in https://arxiv.org/abs/2312.07537.
+        """Enables the FreeInit mechanism as in https://huggingface.co/papers/2312.07537.
 
         This implementation has been adapted from the [official repository](https://github.com/TianxingWu/FreeInit).
 
@@ -73,8 +72,8 @@ class FreeInitMixin:
 
     def _get_free_init_freq_filter(
         self,
-        shape: Tuple[int, ...],
-        device: Union[str, torch.dtype],
+        shape: tuple[int, ...],
+        device: str | torch.dtype,
         filter_type: str,
         order: float,
         spatial_stop_frequency: float,

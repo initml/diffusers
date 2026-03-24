@@ -1,6 +1,6 @@
 import inspect
 from itertools import repeat
-from typing import Callable, List, Optional, Union
+from typing import Callable
 
 import torch
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
@@ -11,7 +11,7 @@ from ...pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyCh
 from ...schedulers import KarrasDiffusionSchedulers
 from ...utils import deprecate, is_torch_xla_available, logging
 from ...utils.torch_utils import randn_tensor
-from ..pipeline_utils import DiffusionPipeline, StableDiffusionMixin
+from ..pipeline_utils import DeprecatedPipelineMixin, DiffusionPipeline, StableDiffusionMixin
 from .pipeline_output import SemanticStableDiffusionPipelineOutput
 
 
@@ -25,7 +25,8 @@ else:
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
-class SemanticStableDiffusionPipeline(DiffusionPipeline, StableDiffusionMixin):
+class SemanticStableDiffusionPipeline(DeprecatedPipelineMixin, DiffusionPipeline, StableDiffusionMixin):
+    _last_supported_version = "0.33.1"
     r"""
     Pipeline for text-to-image generation using Stable Diffusion with latent editing.
 
@@ -47,8 +48,8 @@ class SemanticStableDiffusionPipeline(DiffusionPipeline, StableDiffusionMixin):
             [`DDIMScheduler`], [`LMSDiscreteScheduler`], or [`PNDMScheduler`].
         safety_checker ([`Q16SafetyChecker`]):
             Classification module that estimates whether generated images could be considered offensive or harmful.
-            Please refer to the [model card](https://huggingface.co/runwayml/stable-diffusion-v1-5) for more details
-            about a model's potential harms.
+            Please refer to the [model card](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5) for
+            more details about a model's potential harms.
         feature_extractor ([`~transformers.CLIPImageProcessor`]):
             A `CLIPImageProcessor` to extract features from generated images; used as inputs to the `safety_checker`.
     """
@@ -129,7 +130,7 @@ class SemanticStableDiffusionPipeline(DiffusionPipeline, StableDiffusionMixin):
     def prepare_extra_step_kwargs(self, generator, eta):
         # prepare extra kwargs for the scheduler step, since not all schedulers have the same signature
         # eta (η) is only used with the DDIMScheduler, it will be ignored for other schedulers.
-        # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
+        # eta corresponds to η in DDIM paper: https://huggingface.co/papers/2010.02502
         # and should be between [0, 1]
 
         accepts_eta = "eta" in set(inspect.signature(self.scheduler.step).parameters.keys())
@@ -143,7 +144,6 @@ class SemanticStableDiffusionPipeline(DiffusionPipeline, StableDiffusionMixin):
             extra_step_kwargs["generator"] = generator
         return extra_step_kwargs
 
-    # Copied from diffusers.pipelines.stable_diffusion_k_diffusion.pipeline_stable_diffusion_k_diffusion.StableDiffusionKDiffusionPipeline.check_inputs
     def check_inputs(
         self,
         prompt,
@@ -222,37 +222,37 @@ class SemanticStableDiffusionPipeline(DiffusionPipeline, StableDiffusionMixin):
     @torch.no_grad()
     def __call__(
         self,
-        prompt: Union[str, List[str]],
-        height: Optional[int] = None,
-        width: Optional[int] = None,
+        prompt: str | list[str],
+        height: int | None = None,
+        width: int | None = None,
         num_inference_steps: int = 50,
         guidance_scale: float = 7.5,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
+        negative_prompt: str | list[str] | None = None,
         num_images_per_prompt: int = 1,
         eta: float = 0.0,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        output_type: Optional[str] = "pil",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
-        callback: Optional[Callable[[int, int, torch.Tensor], None]] = None,
+        callback: Callable[[int, int, torch.Tensor], None] | None = None,
         callback_steps: int = 1,
-        editing_prompt: Optional[Union[str, List[str]]] = None,
-        editing_prompt_embeddings: Optional[torch.Tensor] = None,
-        reverse_editing_direction: Optional[Union[bool, List[bool]]] = False,
-        edit_guidance_scale: Optional[Union[float, List[float]]] = 5,
-        edit_warmup_steps: Optional[Union[int, List[int]]] = 10,
-        edit_cooldown_steps: Optional[Union[int, List[int]]] = None,
-        edit_threshold: Optional[Union[float, List[float]]] = 0.9,
-        edit_momentum_scale: Optional[float] = 0.1,
-        edit_mom_beta: Optional[float] = 0.4,
-        edit_weights: Optional[List[float]] = None,
-        sem_guidance: Optional[List[torch.Tensor]] = None,
+        editing_prompt: str | list[str] | None = None,
+        editing_prompt_embeddings: torch.Tensor | None = None,
+        reverse_editing_direction: bool | list[bool] | None = False,
+        edit_guidance_scale: float | list[float] | None = 5,
+        edit_warmup_steps: int | list[int] | None = 10,
+        edit_cooldown_steps: int | list[int] | None = None,
+        edit_threshold: float | list[float] | None = 0.9,
+        edit_momentum_scale: float | None = 0.1,
+        edit_mom_beta: float | None = 0.4,
+        edit_weights: list[float] | None = None,
+        sem_guidance: list[torch.Tensor] | None = None,
     ):
         r"""
         The call function to the pipeline for generation.
 
         Args:
-            prompt (`str` or `List[str]`):
+            prompt (`str` or `list[str]`):
                 The prompt or prompts to guide image generation.
             height (`int`, *optional*, defaults to `self.unet.config.sample_size * self.vae_scale_factor`):
                 The height in pixels of the generated image.
@@ -264,15 +264,15 @@ class SemanticStableDiffusionPipeline(DiffusionPipeline, StableDiffusionMixin):
             guidance_scale (`float`, *optional*, defaults to 7.5):
                 A higher guidance scale value encourages the model to generate images closely linked to the text
                 `prompt` at the expense of lower image quality. Guidance scale is enabled when `guidance_scale > 1`.
-            negative_prompt (`str` or `List[str]`, *optional*):
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide what to not include in image generation. If not defined, you need to
                 pass `negative_prompt_embeds` instead. Ignored when not using guidance (`guidance_scale < 1`).
             num_images_per_prompt (`int`, *optional*, defaults to 1):
                 The number of images to generate per prompt.
             eta (`float`, *optional*, defaults to 0.0):
-                Corresponds to parameter eta (η) from the [DDIM](https://arxiv.org/abs/2010.02502) paper. Only applies
-                to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+                Corresponds to parameter eta (η) from the [DDIM](https://huggingface.co/papers/2010.02502) paper. Only
+                applies to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 A [`torch.Generator`](https://pytorch.org/docs/stable/generated/torch.Generator.html) to make
                 generation deterministic.
             latents (`torch.Tensor`, *optional*):
@@ -290,24 +290,24 @@ class SemanticStableDiffusionPipeline(DiffusionPipeline, StableDiffusionMixin):
             callback_steps (`int`, *optional*, defaults to 1):
                 The frequency at which the `callback` function is called. If not specified, the callback is called at
                 every step.
-            editing_prompt (`str` or `List[str]`, *optional*):
+            editing_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to use for semantic guidance. Semantic guidance is disabled by setting
                 `editing_prompt = None`. Guidance direction of prompt should be specified via
                 `reverse_editing_direction`.
             editing_prompt_embeddings (`torch.Tensor`, *optional*):
                 Pre-computed embeddings to use for semantic guidance. Guidance direction of embedding should be
                 specified via `reverse_editing_direction`.
-            reverse_editing_direction (`bool` or `List[bool]`, *optional*, defaults to `False`):
+            reverse_editing_direction (`bool` or `list[bool]`, *optional*, defaults to `False`):
                 Whether the corresponding prompt in `editing_prompt` should be increased or decreased.
-            edit_guidance_scale (`float` or `List[float]`, *optional*, defaults to 5):
+            edit_guidance_scale (`float` or `list[float]`, *optional*, defaults to 5):
                 Guidance scale for semantic guidance. If provided as a list, values should correspond to
                 `editing_prompt`.
-            edit_warmup_steps (`float` or `List[float]`, *optional*, defaults to 10):
+            edit_warmup_steps (`float` or `list[float]`, *optional*, defaults to 10):
                 Number of diffusion steps (for each prompt) for which semantic guidance is not applied. Momentum is
                 calculated for those steps and applied once all warmup periods are over.
-            edit_cooldown_steps (`float` or `List[float]`, *optional*, defaults to `None`):
+            edit_cooldown_steps (`float` or `list[float]`, *optional*, defaults to `None`):
                 Number of diffusion steps (for each prompt) after which semantic guidance is longer applied.
-            edit_threshold (`float` or `List[float]`, *optional*, defaults to 0.9):
+            edit_threshold (`float` or `list[float]`, *optional*, defaults to 0.9):
                 Threshold of semantic guidance.
             edit_momentum_scale (`float`, *optional*, defaults to 0.1):
                 Scale of the momentum to be added to the semantic guidance at each diffusion step. If set to 0.0,
@@ -317,11 +317,11 @@ class SemanticStableDiffusionPipeline(DiffusionPipeline, StableDiffusionMixin):
                 Defines how semantic guidance momentum builds up. `edit_mom_beta` indicates how much of the previous
                 momentum is kept. Momentum is already built up during warmup (for diffusion steps smaller than
                 `edit_warmup_steps`).
-            edit_weights (`List[float]`, *optional*, defaults to `None`):
+            edit_weights (`list[float]`, *optional*, defaults to `None`):
                 Indicates how much each individual concept should influence the overall guidance. If no weights are
                 provided all concepts are applied equally.
-            sem_guidance (`List[torch.Tensor]`, *optional*):
-                List of pre-generated guidance vectors to be applied at generation. Length of the list has to
+            sem_guidance (`list[torch.Tensor]`, *optional*):
+                list of pre-generated guidance vectors to be applied at generation. Length of the list has to
                 correspond to `num_inference_steps`.
 
         Examples:
@@ -331,7 +331,7 @@ class SemanticStableDiffusionPipeline(DiffusionPipeline, StableDiffusionMixin):
         >>> from diffusers import SemanticStableDiffusionPipeline
 
         >>> pipe = SemanticStableDiffusionPipeline.from_pretrained(
-        ...     "runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16
+        ...     "stable-diffusion-v1-5/stable-diffusion-v1-5", torch_dtype=torch.float16
         ... )
         >>> pipe = pipe.to("cuda")
 
@@ -451,13 +451,13 @@ class SemanticStableDiffusionPipeline(DiffusionPipeline, StableDiffusionMixin):
             edit_concepts = edit_concepts.view(bs_embed_edit * num_images_per_prompt, seq_len_edit, -1)
 
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
-        # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
+        # of the Imagen paper: https://huggingface.co/papers/2205.11487 . `guidance_scale = 1`
         # corresponds to doing no classifier free guidance.
         do_classifier_free_guidance = guidance_scale > 1.0
         # get unconditional embeddings for classifier free guidance
 
         if do_classifier_free_guidance:
-            uncond_tokens: List[str]
+            uncond_tokens: list[str]
             if negative_prompt is None:
                 uncond_tokens = [""] * batch_size
             elif type(prompt) is not type(negative_prompt):

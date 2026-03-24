@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,14 +16,15 @@ import math
 import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Tuple, Union
 
 import flax
 import jax.numpy as jnp
 from huggingface_hub.utils import validate_hf_hub_args
 
-from ..utils import BaseOutput, PushToHubMixin
+from ..utils import BaseOutput, PushToHubMixin, logging
 
+
+logger = logging.get_logger(__name__)
 
 SCHEDULER_CONFIG_NAME = "scheduler_config.json"
 
@@ -60,7 +61,7 @@ class FlaxSchedulerMixin(PushToHubMixin):
     Mixin containing common functions for the schedulers.
 
     Class attributes:
-        - **_compatibles** (`List[str]`) -- A list of classes that are compatible with the parent class, so that
+        - **_compatibles** (`list[str]`) -- A list of classes that are compatible with the parent class, so that
           `from_config` can be used from a class different than the one used to save the config (should be overridden
           by parent class).
     """
@@ -74,8 +75,8 @@ class FlaxSchedulerMixin(PushToHubMixin):
     @validate_hf_hub_args
     def from_pretrained(
         cls,
-        pretrained_model_name_or_path: Optional[Union[str, os.PathLike]] = None,
-        subfolder: Optional[str] = None,
+        pretrained_model_name_or_path: str | os.PathLike | None = None,
+        subfolder: str | None = None,
         return_unused_kwargs=False,
         **kwargs,
     ):
@@ -96,14 +97,14 @@ class FlaxSchedulerMixin(PushToHubMixin):
             return_unused_kwargs (`bool`, *optional*, defaults to `False`):
                 Whether kwargs that are not consumed by the Python class should be returned or not.
 
-            cache_dir (`Union[str, os.PathLike]`, *optional*):
+            cache_dir (`str | os.PathLike`, *optional*):
                 Path to a directory in which a downloaded pretrained model configuration should be cached if the
                 standard cache should not be used.
             force_download (`bool`, *optional*, defaults to `False`):
                 Whether or not to force the (re-)download of the model weights and configuration files, overriding the
                 cached versions if they exist.
 
-            proxies (`Dict[str, str]`, *optional*):
+            proxies (`dict[str, str]`, *optional*):
                 A dictionary of proxy servers to use by protocol or endpoint, e.g., `{'http': 'foo.bar:3128',
                 'http://hostname': 'foo.bar:4012'}`. The proxies are used on each request.
             output_loading_info(`bool`, *optional*, defaults to `False`):
@@ -118,21 +119,18 @@ class FlaxSchedulerMixin(PushToHubMixin):
                 git-based system for storing models and other artifacts on huggingface.co, so `revision` can be any
                 identifier allowed by git.
 
-        <Tip>
+        > [!TIP] > It is required to be logged in (`hf auth login`) when you want to use private or [gated >
+        models](https://huggingface.co/docs/hub/models-gated#gated-models).
 
-         It is required to be logged in (`huggingface-cli login`) when you want to use private or [gated
-         models](https://huggingface.co/docs/hub/models-gated#gated-models).
-
-        </Tip>
-
-        <Tip>
-
-        Activate the special ["offline-mode"](https://huggingface.co/transformers/installation.html#offline-mode) to
-        use this method in a firewalled environment.
-
-        </Tip>
+        > [!TIP] > Activate the special
+        ["offline-mode"](https://huggingface.co/transformers/installation.html#offline-mode) to > use this method in a
+        firewalled environment.
 
         """
+        logger.warning(
+            "Flax classes are deprecated and will be removed in Diffusers v1.0.0. We "
+            "recommend migrating to PyTorch classes or pinning your version of Diffusers."
+        )
         config, kwargs = cls.load_config(
             pretrained_model_name_or_path=pretrained_model_name_or_path,
             subfolder=subfolder,
@@ -149,7 +147,7 @@ class FlaxSchedulerMixin(PushToHubMixin):
 
         return scheduler, state
 
-    def save_pretrained(self, save_directory: Union[str, os.PathLike], push_to_hub: bool = False, **kwargs):
+    def save_pretrained(self, save_directory: str | os.PathLike, push_to_hub: bool = False, **kwargs):
         """
         Save a scheduler configuration object to the directory `save_directory`, so that it can be re-loaded using the
         [`~FlaxSchedulerMixin.from_pretrained`] class method.
@@ -161,7 +159,7 @@ class FlaxSchedulerMixin(PushToHubMixin):
                 Whether or not to push your model to the Hugging Face Hub after saving it. You can specify the
                 repository you want to push to with `repo_id` (will default to the name of `save_directory` in your
                 namespace).
-            kwargs (`Dict[str, Any]`, *optional*):
+            kwargs (`dict[str, Any]`, *optional*):
                 Additional keyword arguments passed along to the [`~utils.PushToHubMixin.push_to_hub`] method.
         """
         self.save_config(save_directory=save_directory, push_to_hub=push_to_hub, **kwargs)
@@ -172,7 +170,7 @@ class FlaxSchedulerMixin(PushToHubMixin):
         Returns all schedulers that are compatible with this scheduler
 
         Returns:
-            `List[SchedulerMixin]`: List of compatible schedulers
+            `list[SchedulerMixin]`: list of compatible schedulers
         """
         return self._get_compatibles()
 
@@ -186,7 +184,7 @@ class FlaxSchedulerMixin(PushToHubMixin):
         return compatible_classes
 
 
-def broadcast_to_shape_from_left(x: jnp.ndarray, shape: Tuple[int]) -> jnp.ndarray:
+def broadcast_to_shape_from_left(x: jnp.ndarray, shape: tuple[int]) -> jnp.ndarray:
     assert len(shape) >= x.ndim
     return jnp.broadcast_to(x.reshape(x.shape + (1,) * (len(shape) - x.ndim)), shape)
 

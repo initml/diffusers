@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -74,7 +74,7 @@ To create the package for PyPI.
    twine upload dist/* -r pypi
 
 10. Prepare the release notes and publish them on GitHub once everything is looking hunky-dory. You can use the following
-    Space to fetch all the commits applicable for the release: https://huggingface.co/spaces/sayakpaul/auto-release-notes-diffusers.
+    Space to fetch all the commits applicable for the release: https://huggingface.co/spacmes/sayakpaul/auto-release-notes-diffusers.
     It automatically fetches the correct tag and branch but also provides the option to configure them.
     `tag` should be the previous release tag (v0.26.1, for example), and `branch` should be
     the latest release branch (v0.27.0-release, for example). It denotes all commits that have happened on branch
@@ -101,8 +101,10 @@ _deps = [
     "datasets",
     "filelock",
     "flax>=0.4.1",
+    "ftfy",
     "hf-doc-builder>=0.3.0",
-    "huggingface-hub>=0.27.0",
+    "httpx<1.0.0",
+    "huggingface-hub>=0.34.0,<2.0",
     "requests-mock==1.10.0",
     "importlib_metadata",
     "invisible-watermark>=0.2.0",
@@ -110,19 +112,18 @@ _deps = [
     "jax>=0.4.1",
     "jaxlib>=0.4.1",
     "Jinja2",
-    "k-diffusion>=0.0.12",
     "torchsde",
     "note_seq",
     "librosa",
     "numpy",
     "parameterized",
-    "peft>=0.6.0",
+    "peft>=0.17.0",
     "protobuf>=3.20.3,<4",
     "pytest",
     "pytest-timeout",
     "pytest-xdist",
-    "python>=3.8.0",
-    "ruff==0.1.5",
+    "python>=3.10.0",
+    "ruff==0.9.10",
     "safetensors>=0.3.1",
     "sentencepiece>=0.1.91,!=0.1.92",
     "GitPython<3.1.19",
@@ -132,6 +133,7 @@ _deps = [
     "gguf>=0.10.0",
     "torchao>=0.7.0",
     "bitsandbytes>=0.43.3",
+    "nvidia_modelopt[hf]>=0.33.1",
     "regex!=2019.12.17",
     "requests",
     "tensorboard",
@@ -142,6 +144,8 @@ _deps = [
     "urllib3<=2.0.0",
     "black",
     "phonemizer",
+    "opencv-python",
+    "timm",
 ]
 
 # this is a lookup table with items like:
@@ -215,16 +219,17 @@ class DepsTableUpdateCommand(Command):
 extras = {}
 extras["quality"] = deps_list("urllib3", "isort", "ruff", "hf-doc-builder")
 extras["docs"] = deps_list("hf-doc-builder")
-extras["training"] = deps_list("accelerate", "datasets", "protobuf", "tensorboard", "Jinja2", "peft")
+extras["training"] = deps_list("accelerate", "datasets", "protobuf", "tensorboard", "Jinja2", "peft", "timm")
 extras["test"] = deps_list(
     "compel",
+    "ftfy",
     "GitPython",
     "datasets",
     "Jinja2",
     "invisible-watermark",
-    "k-diffusion",
     "librosa",
     "parameterized",
+    "protobuf",
     "pytest",
     "pytest-timeout",
     "pytest-xdist",
@@ -233,6 +238,7 @@ extras["test"] = deps_list(
     "sentencepiece",
     "scipy",
     "tiktoken",
+    "torchsde",
     "torchvision",
     "transformers",
     "phonemizer",
@@ -243,6 +249,7 @@ extras["bitsandbytes"] = deps_list("bitsandbytes", "accelerate")
 extras["gguf"] = deps_list("gguf", "accelerate")
 extras["optimum_quanto"] = deps_list("optimum_quanto", "accelerate")
 extras["torchao"] = deps_list("torchao", "accelerate")
+extras["nvidia_modelopt"] = deps_list("nvidia_modelopt[hf]")
 
 if os.name == "nt":  # windows
     extras["flax"] = []  # jax is not supported on windows
@@ -256,6 +263,7 @@ extras["dev"] = (
 install_requires = [
     deps["importlib_metadata"],
     deps["filelock"],
+    deps["httpx"],
     deps["huggingface-hub"],
     deps["numpy"],
     deps["regex"],
@@ -268,7 +276,7 @@ version_range_max = max(sys.version_info[1], 10) + 1
 
 setup(
     name="diffusers",
-    version="0.33.0.dev0",  # expected format is one of x.y.z.dev0, or x.y.z.rc1 or x.y.z (no to dashes, yes to dots)
+    version="0.37.0.dev0",  # expected format is one of x.y.z.dev0, or x.y.z.rc1 or x.y.z (no to dashes, yes to dots)
     description="State-of-the-art diffusion in PyTorch and JAX.",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -281,7 +289,7 @@ setup(
     packages=find_packages("src"),
     package_data={"diffusers": ["py.typed"]},
     include_package_data=True,
-    python_requires=">=3.8.0",
+    python_requires=">=3.10.0",
     install_requires=list(install_requires),
     extras_require=extras,
     entry_points={"console_scripts": ["diffusers-cli=diffusers.commands.diffusers_cli:main"]},

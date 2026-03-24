@@ -1,4 +1,4 @@
-# Copyright 2024 The GLIGEN Authors and HuggingFace Team. All rights reserved.
+# Copyright 2025 The GLIGEN Authors and HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 import inspect
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable
 
 import PIL.Image
 import torch
@@ -41,7 +41,7 @@ from ...utils import (
     unscale_lora_layers,
 )
 from ...utils.torch_utils import randn_tensor
-from ..pipeline_utils import DiffusionPipeline, StableDiffusionMixin
+from ..pipeline_utils import DeprecatedPipelineMixin, DiffusionPipeline, StableDiffusionMixin
 from ..stable_diffusion import StableDiffusionPipelineOutput
 from ..stable_diffusion.clip_image_project_model import CLIPImageProjection
 from ..stable_diffusion.safety_checker import StableDiffusionSafetyChecker
@@ -160,7 +160,7 @@ EXAMPLE_DOC_STRING = """
 """
 
 
-class StableDiffusionGLIGENTextImagePipeline(DiffusionPipeline, StableDiffusionMixin):
+class StableDiffusionGLIGENTextImagePipeline(DeprecatedPipelineMixin, DiffusionPipeline, StableDiffusionMixin):
     r"""
     Pipeline for text-to-image generation using Stable Diffusion with Grounded-Language-to-Image Generation (GLIGEN).
 
@@ -175,7 +175,7 @@ class StableDiffusionGLIGENTextImagePipeline(DiffusionPipeline, StableDiffusionM
         tokenizer ([`~transformers.CLIPTokenizer`]):
             A `CLIPTokenizer` to tokenize text.
         processor ([`~transformers.CLIPProcessor`]):
-            A `CLIPProcessor` to procces reference image.
+            A `CLIPProcessor` to process reference image.
         image_encoder ([`~transformers.CLIPVisionModelWithProjection`]):
             Frozen image-encoder ([clip-vit-large-patch14](https://huggingface.co/openai/clip-vit-large-patch14)).
         image_project ([`CLIPImageProjection`]):
@@ -192,6 +192,8 @@ class StableDiffusionGLIGENTextImagePipeline(DiffusionPipeline, StableDiffusionM
         feature_extractor ([`~transformers.CLIPImageProcessor`]):
             A `CLIPImageProcessor` to extract features from generated images; used as inputs to the `safety_checker`.
     """
+
+    _last_supported_version = "0.33.1"
 
     model_cpu_offload_seq = "text_encoder->unet->vae"
     _optional_components = ["safety_checker", "feature_extractor"]
@@ -253,16 +255,16 @@ class StableDiffusionGLIGENTextImagePipeline(DiffusionPipeline, StableDiffusionM
         num_images_per_prompt,
         do_classifier_free_guidance,
         negative_prompt=None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        lora_scale: Optional[float] = None,
-        clip_skip: Optional[int] = None,
+        prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        lora_scale: float | None = None,
+        clip_skip: int | None = None,
     ):
         r"""
         Encodes the prompt into text encoder hidden states.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 prompt to be encoded
             device: (`torch.device`):
                 torch device
@@ -270,7 +272,7 @@ class StableDiffusionGLIGENTextImagePipeline(DiffusionPipeline, StableDiffusionM
                 number of images that should be generated per prompt
             do_classifier_free_guidance (`bool`):
                 whether to use classifier free guidance or not
-            negative_prompt (`str` or `List[str]`, *optional*):
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts not to guide the image generation. If not defined, one has to pass
                 `negative_prompt_embeds` instead. Ignored when not using guidance (i.e., ignored if `guidance_scale` is
                 less than `1`).
@@ -369,7 +371,7 @@ class StableDiffusionGLIGENTextImagePipeline(DiffusionPipeline, StableDiffusionM
 
         # get unconditional embeddings for classifier free guidance
         if do_classifier_free_guidance and negative_prompt_embeds is None:
-            uncond_tokens: List[str]
+            uncond_tokens: list[str]
             if negative_prompt is None:
                 uncond_tokens = [""] * batch_size
             elif prompt is not None and type(prompt) is not type(negative_prompt):
@@ -447,7 +449,7 @@ class StableDiffusionGLIGENTextImagePipeline(DiffusionPipeline, StableDiffusionM
     def prepare_extra_step_kwargs(self, generator, eta):
         # prepare extra kwargs for the scheduler step, since not all schedulers have the same signature
         # eta (η) is only used with the DDIMScheduler, it will be ignored for other schedulers.
-        # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
+        # eta corresponds to η in DDIM paper: https://huggingface.co/papers/2010.02502
         # and should be between [0, 1]
 
         accepts_eta = "eta" in set(inspect.signature(self.scheduler.step).parameters.keys())
@@ -713,30 +715,30 @@ class StableDiffusionGLIGENTextImagePipeline(DiffusionPipeline, StableDiffusionM
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
         self,
-        prompt: Union[str, List[str]] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
+        prompt: str | list[str] = None,
+        height: int | None = None,
+        width: int | None = None,
         num_inference_steps: int = 50,
         guidance_scale: float = 7.5,
         gligen_scheduled_sampling_beta: float = 0.3,
-        gligen_phrases: List[str] = None,
-        gligen_images: List[PIL.Image.Image] = None,
-        input_phrases_mask: Union[int, List[int]] = None,
-        input_images_mask: Union[int, List[int]] = None,
-        gligen_boxes: List[List[float]] = None,
-        gligen_inpaint_image: Optional[PIL.Image.Image] = None,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        num_images_per_prompt: Optional[int] = 1,
+        gligen_phrases: list[str] = None,
+        gligen_images: list[PIL.Image.Image] = None,
+        input_phrases_mask: int | list[int] = None,
+        input_images_mask: int | list[int] = None,
+        gligen_boxes: list[list[float]] = None,
+        gligen_inpaint_image: PIL.Image.Image | None = None,
+        negative_prompt: str | list[str] | None = None,
+        num_images_per_prompt: int | None = 1,
         eta: float = 0.0,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        output_type: Optional[str] = "pil",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
+        prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
-        callback: Optional[Callable[[int, int, torch.Tensor], None]] = None,
+        callback: Callable[[int, int, torch.Tensor], None] | None = None,
         callback_steps: int = 1,
-        cross_attention_kwargs: Optional[Dict[str, Any]] = None,
+        cross_attention_kwargs: dict[str, Any] | None = None,
         gligen_normalize_constant: float = 28.7,
         clip_skip: int = None,
     ):
@@ -744,7 +746,7 @@ class StableDiffusionGLIGENTextImagePipeline(DiffusionPipeline, StableDiffusionM
         The call function to the pipeline for generation.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide image generation. If not defined, you need to pass `prompt_embeds`.
             height (`int`, *optional*, defaults to `self.unet.config.sample_size * self.vae_scale_factor`):
                 The height in pixels of the generated image.
@@ -756,36 +758,36 @@ class StableDiffusionGLIGENTextImagePipeline(DiffusionPipeline, StableDiffusionM
             guidance_scale (`float`, *optional*, defaults to 7.5):
                 A higher guidance scale value encourages the model to generate images closely linked to the text
                 `prompt` at the expense of lower image quality. Guidance scale is enabled when `guidance_scale > 1`.
-            gligen_phrases (`List[str]`):
+            gligen_phrases (`list[str]`):
                 The phrases to guide what to include in each of the regions defined by the corresponding
                 `gligen_boxes`. There should only be one phrase per bounding box.
-            gligen_images (`List[PIL.Image.Image]`):
+            gligen_images (`list[PIL.Image.Image]`):
                 The images to guide what to include in each of the regions defined by the corresponding `gligen_boxes`.
                 There should only be one image per bounding box
-            input_phrases_mask (`int` or `List[int]`):
+            input_phrases_mask (`int` or `list[int]`):
                 pre phrases mask input defined by the correspongding `input_phrases_mask`
-            input_images_mask (`int` or `List[int]`):
+            input_images_mask (`int` or `list[int]`):
                 pre images mask input defined by the correspongding `input_images_mask`
-            gligen_boxes (`List[List[float]]`):
+            gligen_boxes (`list[list[float]]`):
                 The bounding boxes that identify rectangular regions of the image that are going to be filled with the
                 content described by the corresponding `gligen_phrases`. Each rectangular box is defined as a
-                `List[float]` of 4 elements `[xmin, ymin, xmax, ymax]` where each value is between [0,1].
+                `list[float]` of 4 elements `[xmin, ymin, xmax, ymax]` where each value is between [0,1].
             gligen_inpaint_image (`PIL.Image.Image`, *optional*):
                 The input image, if provided, is inpainted with objects described by the `gligen_boxes` and
                 `gligen_phrases`. Otherwise, it is treated as a generation task on a blank input image.
             gligen_scheduled_sampling_beta (`float`, defaults to 0.3):
                 Scheduled Sampling factor from [GLIGEN: Open-Set Grounded Text-to-Image
-                Generation](https://arxiv.org/pdf/2301.07093.pdf). Scheduled Sampling factor is only varied for
+                Generation](https://huggingface.co/papers/2301.07093). Scheduled Sampling factor is only varied for
                 scheduled sampling during inference for improved quality and controllability.
-            negative_prompt (`str` or `List[str]`, *optional*):
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide what to not include in image generation. If not defined, you need to
                 pass `negative_prompt_embeds` instead. Ignored when not using guidance (`guidance_scale < 1`).
             num_images_per_prompt (`int`, *optional*, defaults to 1):
                 The number of images to generate per prompt.
             eta (`float`, *optional*, defaults to 0.0):
-                Corresponds to parameter eta (η) from the [DDIM](https://arxiv.org/abs/2010.02502) paper. Only applies
-                to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+                Corresponds to parameter eta (η) from the [DDIM](https://huggingface.co/papers/2010.02502) paper. Only
+                applies to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 A [`torch.Generator`](https://pytorch.org/docs/stable/generated/torch.Generator.html) to make
                 generation deterministic.
             latents (`torch.Tensor`, *optional*):
@@ -854,7 +856,7 @@ class StableDiffusionGLIGENTextImagePipeline(DiffusionPipeline, StableDiffusionM
 
         device = self._execution_device
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
-        # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
+        # of the Imagen paper: https://huggingface.co/papers/2205.11487 . `guidance_scale = 1`
         # corresponds to doing no classifier free guidance.
         do_classifier_free_guidance = guidance_scale > 1.0
 

@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team.
+# Copyright 2025 The HuggingFace Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,14 +18,14 @@ import unittest
 import numpy as np
 import torch
 from PIL import Image
-from transformers import AutoTokenizer, T5EncoderModel
+from transformers import AutoConfig, AutoTokenizer, T5EncoderModel
 
 from diffusers import AutoencoderKLCogVideoX, CogVideoXFunControlPipeline, CogVideoXTransformer3DModel, DDIMScheduler
-from diffusers.utils.testing_utils import (
+
+from ...testing_utils import (
     enable_full_determinism,
     torch_device,
 )
-
 from ..pipeline_params import TEXT_TO_IMAGE_BATCH_PARAMS, TEXT_TO_IMAGE_IMAGE_PARAMS, TEXT_TO_IMAGE_PARAMS
 from ..test_pipelines_common import (
     PipelineTesterMixin,
@@ -104,7 +104,8 @@ class CogVideoXFunControlPipelineFastTests(PipelineTesterMixin, unittest.TestCas
 
         torch.manual_seed(0)
         scheduler = DDIMScheduler()
-        text_encoder = T5EncoderModel.from_pretrained("hf-internal-testing/tiny-random-t5")
+        config = AutoConfig.from_pretrained("hf-internal-testing/tiny-random-t5")
+        text_encoder = T5EncoderModel(config)
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-t5")
 
         components = {
@@ -228,6 +229,9 @@ class CogVideoXFunControlPipelineFastTests(PipelineTesterMixin, unittest.TestCas
             return
 
         components = self.get_dummy_components()
+        for key in components:
+            if "text_encoder" in key and hasattr(components[key], "eval"):
+                components[key].eval()
         pipe = self.pipeline_class(**components)
         for component in pipe.components.values():
             if hasattr(component, "set_default_attn_processor"):
@@ -299,9 +303,9 @@ class CogVideoXFunControlPipelineFastTests(PipelineTesterMixin, unittest.TestCas
         original_image_slice = frames[0, -2:, -1, -3:, -3:]
 
         pipe.fuse_qkv_projections()
-        assert check_qkv_fusion_processors_exist(
-            pipe.transformer
-        ), "Something wrong with the fused attention processors. Expected all the attention processors to be fused."
+        assert check_qkv_fusion_processors_exist(pipe.transformer), (
+            "Something wrong with the fused attention processors. Expected all the attention processors to be fused."
+        )
         assert check_qkv_fusion_matches_attn_procs_length(
             pipe.transformer, pipe.transformer.original_attn_processors
         ), "Something wrong with the attention processors concerning the fused QKV projections."
@@ -315,12 +319,12 @@ class CogVideoXFunControlPipelineFastTests(PipelineTesterMixin, unittest.TestCas
         frames = pipe(**inputs).frames
         image_slice_disabled = frames[0, -2:, -1, -3:, -3:]
 
-        assert np.allclose(
-            original_image_slice, image_slice_fused, atol=1e-3, rtol=1e-3
-        ), "Fusion of QKV projections shouldn't affect the outputs."
-        assert np.allclose(
-            image_slice_fused, image_slice_disabled, atol=1e-3, rtol=1e-3
-        ), "Outputs, with QKV projection fusion enabled, shouldn't change when fused QKV projections are disabled."
-        assert np.allclose(
-            original_image_slice, image_slice_disabled, atol=1e-2, rtol=1e-2
-        ), "Original outputs should match when fused QKV projections are disabled."
+        assert np.allclose(original_image_slice, image_slice_fused, atol=1e-3, rtol=1e-3), (
+            "Fusion of QKV projections shouldn't affect the outputs."
+        )
+        assert np.allclose(image_slice_fused, image_slice_disabled, atol=1e-3, rtol=1e-3), (
+            "Outputs, with QKV projection fusion enabled, shouldn't change when fused QKV projections are disabled."
+        )
+        assert np.allclose(original_image_slice, image_slice_disabled, atol=1e-2, rtol=1e-2), (
+            "Original outputs should match when fused QKV projections are disabled."
+        )

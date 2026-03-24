@@ -17,7 +17,7 @@
 import importlib
 import inspect
 import os
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import flax
 import numpy as np
@@ -90,12 +90,12 @@ class FlaxImagePipelineOutput(BaseOutput):
     Output class for image pipelines.
 
     Args:
-        images (`List[PIL.Image.Image]` or `np.ndarray`)
-            List of denoised PIL images of length `batch_size` or NumPy array of shape `(batch_size, height, width,
+        images (`list[PIL.Image.Image]` or `np.ndarray`)
+            list of denoised PIL images of length `batch_size` or NumPy array of shape `(batch_size, height, width,
             num_channels)`.
     """
 
-    images: Union[List[PIL.Image.Image], np.ndarray]
+    images: list[PIL.Image.Image] | np.ndarray
 
 
 class FlaxDiffusionPipeline(ConfigMixin, PushToHubMixin):
@@ -150,8 +150,8 @@ class FlaxDiffusionPipeline(ConfigMixin, PushToHubMixin):
 
     def save_pretrained(
         self,
-        save_directory: Union[str, os.PathLike],
-        params: Union[Dict, FrozenDict],
+        save_directory: str | os.PathLike,
+        params: dict | FrozenDict,
         push_to_hub: bool = False,
         **kwargs,
     ):
@@ -168,7 +168,7 @@ class FlaxDiffusionPipeline(ConfigMixin, PushToHubMixin):
                 Whether or not to push your model to the Hugging Face model hub after saving it. You can specify the
                 repository you want to push to with `repo_id` (will default to the name of `save_directory` in your
                 namespace).
-            kwargs (`Dict[str, Any]`, *optional*):
+            kwargs (`dict[str, Any]`, *optional*):
                 Additional keyword arguments passed along to the [`~utils.PushToHubMixin.push_to_hub`] method.
         """
         self.save_config(save_directory)
@@ -228,7 +228,7 @@ class FlaxDiffusionPipeline(ConfigMixin, PushToHubMixin):
 
     @classmethod
     @validate_hf_hub_args
-    def from_pretrained(cls, pretrained_model_name_or_path: Optional[Union[str, os.PathLike]], **kwargs):
+    def from_pretrained(cls, pretrained_model_name_or_path: str | os.PathLike | None, **kwargs):
         r"""
         Instantiate a Flax-based diffusion pipeline from pretrained pipeline weights.
 
@@ -248,14 +248,13 @@ class FlaxDiffusionPipeline(ConfigMixin, PushToHubMixin):
                       pretrained pipeline hosted on the Hub.
                     - A path to a *directory* (for example `./my_model_directory`) containing the model weights saved
                       using [`~FlaxDiffusionPipeline.save_pretrained`].
-            dtype (`str` or `jnp.dtype`, *optional*):
-                Override the default `jnp.dtype` and load the model under this dtype. If `"auto"`, the dtype is
-                automatically derived from the model's weights.
+            dtype (`jnp.dtype`, *optional*):
+                Override the default `jnp.dtype` and load the model under this dtype.
             force_download (`bool`, *optional*, defaults to `False`):
                 Whether or not to force the (re-)download of the model weights and configuration files, overriding the
                 cached versions if they exist.
 
-            proxies (`Dict[str, str]`, *optional*):
+            proxies (`dict[str, str]`, *optional*):
                 A dictionary of proxy servers to use by protocol or endpoint, for example, `{'http': 'foo.bar:3128',
                 'http://hostname': 'foo.bar:4012'}`. The proxies are used on each request.
             output_loading_info(`bool`, *optional*, defaults to `False`):
@@ -277,12 +276,8 @@ class FlaxDiffusionPipeline(ConfigMixin, PushToHubMixin):
                 Can be used to overwrite load and saveable variables (the pipeline components) of the specific pipeline
                 class. The overwritten components are passed directly to the pipelines `__init__` method.
 
-        <Tip>
-
-        To use private or [gated models](https://huggingface.co/docs/hub/models-gated#gated-models), log-in with
-        `huggingface-cli login`.
-
-        </Tip>
+        > [!TIP] > To use private or [gated models](https://huggingface.co/docs/hub/models-gated#gated-models), log-in
+        with `hf > auth login`.
 
         Examples:
 
@@ -313,6 +308,11 @@ class FlaxDiffusionPipeline(ConfigMixin, PushToHubMixin):
         >>> dpm_params["scheduler"] = dpmpp_state
         ```
         """
+        logger.warning(
+            "Flax classes are deprecated and will be removed in Diffusers v1.0.0. We "
+            "recommend migrating to PyTorch classes or pinning your version of Diffusers."
+        )
+
         cache_dir = kwargs.pop("cache_dir", None)
         proxies = kwargs.pop("proxies", None)
         local_files_only = kwargs.pop("local_files_only", False)
@@ -469,7 +469,7 @@ class FlaxDiffusionPipeline(ConfigMixin, PushToHubMixin):
                 class_obj = import_flax_or_no_model(pipeline_module, class_name)
 
                 importable_classes = ALL_IMPORTABLE_CLASSES
-                class_candidates = {c: class_obj for c in importable_classes.keys()}
+                class_candidates = dict.fromkeys(importable_classes.keys(), class_obj)
             else:
                 # else we just import it from the library.
                 library = importlib.import_module(library_name)
@@ -544,7 +544,7 @@ class FlaxDiffusionPipeline(ConfigMixin, PushToHubMixin):
         return expected_modules, optional_parameters
 
     @property
-    def components(self) -> Dict[str, Any]:
+    def components(self) -> dict[str, Any]:
         r"""
 
         The `self.components` property can be useful to run different pipelines with the same weights and

@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable
 
 import torch
 from transformers import CLIPTextModelWithProjection, CLIPTokenizer
@@ -21,7 +21,7 @@ from ...models import StableCascadeUNet
 from ...schedulers import DDPMWuerstchenScheduler
 from ...utils import is_torch_version, is_torch_xla_available, logging, replace_example_docstring
 from ...utils.torch_utils import randn_tensor
-from ..pipeline_utils import DiffusionPipeline, ImagePipelineOutput
+from ..pipeline_utils import DeprecatedPipelineMixin, DiffusionPipeline, ImagePipelineOutput
 from ..wuerstchen.modeling_paella_vq_model import PaellaVQModel
 
 
@@ -55,7 +55,7 @@ EXAMPLE_DOC_STRING = """
 """
 
 
-class StableCascadeDecoderPipeline(DiffusionPipeline):
+class StableCascadeDecoderPipeline(DeprecatedPipelineMixin, DiffusionPipeline):
     """
     Pipeline for generating images from the Stable Cascade model.
 
@@ -78,6 +78,8 @@ class StableCascadeDecoderPipeline(DiffusionPipeline):
             height=24 and width=24, the VQ latent shape needs to be height=int(24*10.67)=256 and
             width=int(24*10.67)=256 in order to match the training conditions.
     """
+
+    _last_supported_version = "0.35.2"
 
     unet_name = "decoder"
     text_encoder_name = "text_encoder"
@@ -137,10 +139,10 @@ class StableCascadeDecoderPipeline(DiffusionPipeline):
         do_classifier_free_guidance,
         prompt=None,
         negative_prompt=None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_embeds_pooled: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds_pooled: Optional[torch.Tensor] = None,
+        prompt_embeds: torch.Tensor | None = None,
+        prompt_embeds_pooled: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds_pooled: torch.Tensor | None = None,
     ):
         if prompt_embeds is None:
             # get prompt text embeddings
@@ -182,7 +184,7 @@ class StableCascadeDecoderPipeline(DiffusionPipeline):
         prompt_embeds_pooled = prompt_embeds_pooled.repeat_interleave(num_images_per_prompt, dim=0)
 
         if negative_prompt_embeds is None and do_classifier_free_guidance:
-            uncond_tokens: List[str]
+            uncond_tokens: list[str]
             if negative_prompt is None:
                 uncond_tokens = [""] * batch_size
             elif type(prompt) is not type(negative_prompt):
@@ -303,41 +305,41 @@ class StableCascadeDecoderPipeline(DiffusionPipeline):
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
         self,
-        image_embeddings: Union[torch.Tensor, List[torch.Tensor]],
-        prompt: Union[str, List[str]] = None,
+        image_embeddings: torch.Tensor | list[torch.Tensor],
+        prompt: str | list[str] = None,
         num_inference_steps: int = 10,
         guidance_scale: float = 0.0,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_embeds_pooled: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds_pooled: Optional[torch.Tensor] = None,
+        negative_prompt: str | list[str] | None = None,
+        prompt_embeds: torch.Tensor | None = None,
+        prompt_embeds_pooled: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds_pooled: torch.Tensor | None = None,
         num_images_per_prompt: int = 1,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        output_type: Optional[str] = "pil",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
-        callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
-        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        callback_on_step_end: Callable[[int, int], None] | None = None,
+        callback_on_step_end_tensor_inputs: list[str] = ["latents"],
     ):
         """
         Function invoked when calling the pipeline for generation.
 
         Args:
-            image_embedding (`torch.Tensor` or `List[torch.Tensor]`):
+            image_embedding (`torch.Tensor` or `list[torch.Tensor]`):
                 Image Embeddings either extracted from an image or generated by a Prior Model.
-            prompt (`str` or `List[str]`):
+            prompt (`str` or `list[str]`):
                 The prompt or prompts to guide the image generation.
             num_inference_steps (`int`, *optional*, defaults to 12):
                 The number of denoising steps. More denoising steps usually lead to a higher quality image at the
                 expense of slower inference.
             guidance_scale (`float`, *optional*, defaults to 0.0):
-                Guidance scale as defined in [Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598).
-                `decoder_guidance_scale` is defined as `w` of equation 2. of [Imagen
-                Paper](https://arxiv.org/pdf/2205.11487.pdf). Guidance scale is enabled by setting
-                `decoder_guidance_scale > 1`. Higher guidance scale encourages to generate images that are closely
-                linked to the text `prompt`, usually at the expense of lower image quality.
-            negative_prompt (`str` or `List[str]`, *optional*):
+                Guidance scale as defined in [Classifier-Free Diffusion
+                Guidance](https://huggingface.co/papers/2207.12598). `decoder_guidance_scale` is defined as `w` of
+                equation 2. of [Imagen Paper](https://huggingface.co/papers/2205.11487). Guidance scale is enabled by
+                setting `decoder_guidance_scale > 1`. Higher guidance scale encourages to generate images that are
+                closely linked to the text `prompt`, usually at the expense of lower image quality.
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts not to guide the image generation. Ignored when not using guidance (i.e., ignored
                 if `decoder_guidance_scale` is less than `1`).
             prompt_embeds (`torch.Tensor`, *optional*):
@@ -356,13 +358,13 @@ class StableCascadeDecoderPipeline(DiffusionPipeline):
                 input argument.
             num_images_per_prompt (`int`, *optional*, defaults to 1):
                 The number of images to generate per prompt.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 One or a list of [torch generator(s)](https://pytorch.org/docs/stable/generated/torch.Generator.html)
                 to make generation deterministic.
             latents (`torch.Tensor`, *optional*):
                 Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for image
                 generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
-                tensor will ge generated by sampling using the supplied random `generator`.
+                tensor will be generated by sampling using the supplied random `generator`.
             output_type (`str`, *optional*, defaults to `"pil"`):
                 The output format of the generate image. Choose between: `"pil"` (`PIL.Image.Image`), `"np"`
                 (`np.array`) or `"pt"` (`torch.Tensor`).
@@ -373,7 +375,7 @@ class StableCascadeDecoderPipeline(DiffusionPipeline):
                 with the following arguments: `callback_on_step_end(self: DiffusionPipeline, step: int, timestep: int,
                 callback_kwargs: Dict)`. `callback_kwargs` will include a list of all tensors as specified by
                 `callback_on_step_end_tensor_inputs`.
-            callback_on_step_end_tensor_inputs (`List`, *optional*):
+            callback_on_step_end_tensor_inputs (`list`, *optional*):
                 The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
                 will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
                 `._callback_tensor_inputs` attribute of your pipeline class.
@@ -524,9 +526,9 @@ class StableCascadeDecoderPipeline(DiffusionPipeline):
             latents = self.vqgan.config.scale_factor * latents
             images = self.vqgan.decode(latents).sample.clamp(0, 1)
             if output_type == "np":
-                images = images.permute(0, 2, 3, 1).cpu().float().numpy()  # float() as bfloat16-> numpy doesnt work
+                images = images.permute(0, 2, 3, 1).cpu().float().numpy()  # float() as bfloat16-> numpy doesn't work
             elif output_type == "pil":
-                images = images.permute(0, 2, 3, 1).cpu().float().numpy()  # float() as bfloat16-> numpy doesnt work
+                images = images.permute(0, 2, 3, 1).cpu().float().numpy()  # float() as bfloat16-> numpy doesn't work
                 images = self.numpy_to_pil(images)
         else:
             images = latents

@@ -1,4 +1,4 @@
-# Copyright 2024 PixArt-Sigma Authors and The HuggingFace Team. All rights reserved.
+# Copyright 2025 SANA-Sprint Authors and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ import inspect
 import re
 import urllib.parse as ul
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable
 
 import torch
 from transformers import Gemma2PreTrainedModel, GemmaTokenizer, GemmaTokenizerFast
@@ -30,6 +30,7 @@ from ...schedulers import DPMSolverMultistepScheduler
 from ...utils import (
     BACKENDS_MAPPING,
     USE_PEFT_BACKEND,
+    deprecate,
     is_bs4_available,
     is_ftfy_available,
     is_torch_xla_available,
@@ -38,7 +39,7 @@ from ...utils import (
     scale_lora_layers,
     unscale_lora_layers,
 )
-from ...utils.torch_utils import randn_tensor
+from ...utils.torch_utils import get_device, is_torch_version, randn_tensor
 from ..pipeline_utils import DiffusionPipeline
 from ..pixart_alpha.pipeline_pixart_alpha import ASPECT_RATIO_1024_BIN
 from .pipeline_output import SanaPipelineOutput
@@ -80,10 +81,10 @@ EXAMPLE_DOC_STRING = """
 # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.retrieve_timesteps
 def retrieve_timesteps(
     scheduler,
-    num_inference_steps: Optional[int] = None,
-    device: Optional[Union[str, torch.device]] = None,
-    timesteps: Optional[List[int]] = None,
-    sigmas: Optional[List[float]] = None,
+    num_inference_steps: int | None = None,
+    device: str | torch.device | None = None,
+    timesteps: list[int] | None = None,
+    sigmas: list[float] | None = None,
     **kwargs,
 ):
     r"""
@@ -98,15 +99,15 @@ def retrieve_timesteps(
             must be `None`.
         device (`str` or `torch.device`, *optional*):
             The device to which the timesteps should be moved to. If `None`, the timesteps are not moved.
-        timesteps (`List[int]`, *optional*):
+        timesteps (`list[int]`, *optional*):
             Custom timesteps used to override the timestep spacing strategy of the scheduler. If `timesteps` is passed,
             `num_inference_steps` and `sigmas` must be `None`.
-        sigmas (`List[float]`, *optional*):
+        sigmas (`list[float]`, *optional*):
             Custom sigmas used to override the timestep spacing strategy of the scheduler. If `sigmas` is passed,
             `num_inference_steps` and `timesteps` must be `None`.
 
     Returns:
-        `Tuple[torch.Tensor, int]`: A tuple where the first element is the timestep schedule from the scheduler and the
+        `tuple[torch.Tensor, int]`: A tuple where the first element is the timestep schedule from the scheduler and the
         second element is the number of inference steps.
     """
     if timesteps is not None and sigmas is not None:
@@ -151,7 +152,7 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
 
     def __init__(
         self,
-        tokenizer: Union[GemmaTokenizer, GemmaTokenizerFast],
+        tokenizer: GemmaTokenizer | GemmaTokenizerFast,
         text_encoder: Gemma2PreTrainedModel,
         vae: AutoencoderDC,
         transformer: SanaTransformer2DModel,
@@ -175,6 +176,12 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
         Enable sliced VAE decoding. When this option is enabled, the VAE will split the input tensor in slices to
         compute decoding in several steps. This is useful to save some memory and allow larger batch sizes.
         """
+        depr_message = f"Calling `enable_vae_slicing()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.enable_slicing()`."
+        deprecate(
+            "enable_vae_slicing",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.enable_slicing()
 
     def disable_vae_slicing(self):
@@ -182,6 +189,12 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
         Disable sliced VAE decoding. If `enable_vae_slicing` was previously enabled, this method will go back to
         computing decoding in one step.
         """
+        depr_message = f"Calling `disable_vae_slicing()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.disable_slicing()`."
+        deprecate(
+            "disable_vae_slicing",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.disable_slicing()
 
     def enable_vae_tiling(self):
@@ -190,6 +203,12 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
         compute decoding and encoding in several steps. This is useful for saving a large amount of memory and to allow
         processing larger images.
         """
+        depr_message = f"Calling `enable_vae_tiling()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.enable_tiling()`."
+        deprecate(
+            "enable_vae_tiling",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.enable_tiling()
 
     def disable_vae_tiling(self):
@@ -197,23 +216,29 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
         Disable tiled VAE decoding. If `enable_vae_tiling` was previously enabled, this method will go back to
         computing decoding in one step.
         """
+        depr_message = f"Calling `disable_vae_tiling()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.disable_tiling()`."
+        deprecate(
+            "disable_vae_tiling",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.disable_tiling()
 
     # Copied from diffusers.pipelines.sana.pipeline_sana.SanaPipeline._get_gemma_prompt_embeds
     def _get_gemma_prompt_embeds(
         self,
-        prompt: Union[str, List[str]],
+        prompt: str | list[str],
         device: torch.device,
         dtype: torch.dtype,
         clean_caption: bool = False,
         max_sequence_length: int = 300,
-        complex_human_instruction: Optional[List[str]] = None,
+        complex_human_instruction: list[str] | None = None,
     ):
         r"""
         Encodes the prompt into text encoder hidden states.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 prompt to be encoded
             device: (`torch.device`, *optional*):
                 torch device to place the resulting embeddings on
@@ -260,21 +285,21 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
 
     def encode_prompt(
         self,
-        prompt: Union[str, List[str]],
+        prompt: str | list[str],
         num_images_per_prompt: int = 1,
-        device: Optional[torch.device] = None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_attention_mask: Optional[torch.Tensor] = None,
+        device: torch.device | None = None,
+        prompt_embeds: torch.Tensor | None = None,
+        prompt_attention_mask: torch.Tensor | None = None,
         clean_caption: bool = False,
         max_sequence_length: int = 300,
-        complex_human_instruction: Optional[List[str]] = None,
-        lora_scale: Optional[float] = None,
+        complex_human_instruction: list[str] | None = None,
+        lora_scale: float | None = None,
     ):
         r"""
         Encodes the prompt into text encoder hidden states.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 prompt to be encoded
 
             num_images_per_prompt (`int`, *optional*, defaults to 1):
@@ -295,9 +320,7 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
         if device is None:
             device = self._execution_device
 
-        if self.transformer is not None:
-            dtype = self.transformer.dtype
-        elif self.text_encoder is not None:
+        if self.text_encoder is not None:
             dtype = self.text_encoder.dtype
         else:
             dtype = None
@@ -349,7 +372,7 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
     def prepare_extra_step_kwargs(self, generator, eta):
         # prepare extra kwargs for the scheduler step, since not all schedulers have the same signature
         # eta (η) is only used with the DDIMScheduler, it will be ignored for other schedulers.
-        # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
+        # eta corresponds to η in DDIM paper: https://huggingface.co/papers/2010.02502
         # and should be between [0, 1]
 
         accepts_eta = "eta" in set(inspect.signature(self.scheduler.step).parameters.keys())
@@ -493,7 +516,7 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
         # &amp
         caption = re.sub(r"&amp", "", caption)
 
-        # ip adresses:
+        # ip addresses:
         caption = re.sub(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", " ", caption)
 
         # article ids:
@@ -593,29 +616,29 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
         self,
-        prompt: Union[str, List[str]] = None,
+        prompt: str | list[str] = None,
         num_inference_steps: int = 2,
-        timesteps: List[int] = None,
+        timesteps: list[int] = None,
         max_timesteps: float = 1.57080,
         intermediate_timesteps: float = 1.3,
         guidance_scale: float = 4.5,
-        num_images_per_prompt: Optional[int] = 1,
+        num_images_per_prompt: int | None = 1,
         height: int = 1024,
         width: int = 1024,
         eta: float = 0.0,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_attention_mask: Optional[torch.Tensor] = None,
-        output_type: Optional[str] = "pil",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
+        prompt_embeds: torch.Tensor | None = None,
+        prompt_attention_mask: torch.Tensor | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
         clean_caption: bool = False,
         use_resolution_binning: bool = True,
-        attention_kwargs: Optional[Dict[str, Any]] = None,
-        callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
-        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        attention_kwargs: dict[str, Any] | None = None,
+        callback_on_step_end: Callable[[int, int], None] | None = None,
+        callback_on_step_end_tensor_inputs: list[str] = ["latents"],
         max_sequence_length: int = 300,
-        complex_human_instruction: List[str] = [
+        complex_human_instruction: list[str] = [
             "Given a user prompt, generate an 'Enhanced prompt' that provides detailed visual descriptions suitable for image generation. Evaluate the level of detail in the user prompt:",
             "- If the prompt is simple, focus on adding specifics about colors, shapes, sizes, textures, and spatial relationships to create vivid and concrete scenes.",
             "- If the prompt is already detailed, refine and enhance the existing details slightly without overcomplicating.",
@@ -625,12 +648,12 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
             "Please generate only the enhanced description for the prompt below and avoid including any additional commentary or evaluations:",
             "User Prompt: ",
         ],
-    ) -> Union[SanaPipelineOutput, Tuple]:
+    ) -> SanaPipelineOutput | tuple:
         """
         Function invoked when calling the pipeline for generation.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide the image generation. If not defined, one has to pass `prompt_embeds`.
                 instead.
             num_inference_steps (`int`, *optional*, defaults to 20):
@@ -640,16 +663,16 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
                 The maximum timestep value used in the SCM scheduler.
             intermediate_timesteps (`float`, *optional*, defaults to 1.3):
                 The intermediate timestep value used in SCM scheduler (only used when num_inference_steps=2).
-            timesteps (`List[int]`, *optional*):
+            timesteps (`list[int]`, *optional*):
                 Custom timesteps to use for the denoising process with schedulers which support a `timesteps` argument
                 in their `set_timesteps` method. If not defined, the default behavior when `num_inference_steps` is
                 passed will be used. Must be in descending order.
             guidance_scale (`float`, *optional*, defaults to 4.5):
-                Guidance scale as defined in [Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598).
-                `guidance_scale` is defined as `w` of equation 2. of [Imagen
-                Paper](https://arxiv.org/pdf/2205.11487.pdf). Guidance scale is enabled by setting `guidance_scale >
-                1`. Higher guidance scale encourages to generate images that are closely linked to the text `prompt`,
-                usually at the expense of lower image quality.
+                Embedded guiddance scale is enabled by setting `guidance_scale` > 1. Higher `guidance_scale` encourages
+                a model to generate images more aligned with `prompt` at the expense of lower image quality.
+
+                Guidance-distilled models approximates true classifer-free guidance for `guidance_scale` > 1. Refer to
+                the [paper](https://huggingface.co/papers/2210.03142) to learn more.
             num_images_per_prompt (`int`, *optional*, defaults to 1):
                 The number of images to generate per prompt.
             height (`int`, *optional*, defaults to self.unet.config.sample_size):
@@ -657,15 +680,15 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
             width (`int`, *optional*, defaults to self.unet.config.sample_size):
                 The width in pixels of the generated image.
             eta (`float`, *optional*, defaults to 0.0):
-                Corresponds to parameter eta (η) in the DDIM paper: https://arxiv.org/abs/2010.02502. Only applies to
-                [`schedulers.DDIMScheduler`], will be ignored for others.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+                Corresponds to parameter eta (η) in the DDIM paper: https://huggingface.co/papers/2010.02502. Only
+                applies to [`schedulers.DDIMScheduler`], will be ignored for others.
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 One or a list of [torch generator(s)](https://pytorch.org/docs/stable/generated/torch.Generator.html)
                 to make generation deterministic.
             latents (`torch.Tensor`, *optional*):
                 Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for image
                 generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
-                tensor will ge generated by sampling using the supplied random `generator`.
+                tensor will be generated by sampling using the supplied random `generator`.
             prompt_embeds (`torch.Tensor`, *optional*):
                 Pre-generated text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting. If not
                 provided, text embeddings will be generated from `prompt` input argument.
@@ -692,13 +715,13 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
                 with the following arguments: `callback_on_step_end(self: DiffusionPipeline, step: int, timestep: int,
                 callback_kwargs: Dict)`. `callback_kwargs` will include a list of all tensors as specified by
                 `callback_on_step_end_tensor_inputs`.
-            callback_on_step_end_tensor_inputs (`List`, *optional*):
+            callback_on_step_end_tensor_inputs (`list`, *optional*):
                 The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
                 will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
                 `._callback_tensor_inputs` attribute of your pipeline class.
             max_sequence_length (`int` defaults to `300`):
                 Maximum sequence length to use with the `prompt`.
-            complex_human_instruction (`List[str]`, *optional*):
+            complex_human_instruction (`list[str]`, *optional*):
                 Instructions for complex human attention:
                 https://github.com/NVlabs/Sana/blob/main/configs/sana_app_config/Sana_1600M_app.yaml#L55.
 
@@ -767,10 +790,14 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
         )
 
         # 4. Prepare timesteps
+        if XLA_AVAILABLE:
+            timestep_device = "cpu"
+        else:
+            timestep_device = device
         timesteps, num_inference_steps = retrieve_timesteps(
             self.scheduler,
             num_inference_steps,
-            device,
+            timestep_device,
             timesteps,
             sigmas=None,
             max_timesteps=max_timesteps,
@@ -806,13 +833,14 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
         num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
         self._num_timesteps = len(timesteps)
 
+        transformer_dtype = self.transformer.dtype
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 if self.interrupt:
                     continue
 
                 # broadcast to batch dimension in a way that's compatible with ONNX/Core ML
-                timestep = t.expand(latents.shape[0]).to(prompt_embeds.dtype)
+                timestep = t.expand(latents.shape[0])
                 latents_model_input = latents / self.scheduler.config.sigma_data
 
                 scm_timestep = torch.sin(timestep) / (torch.cos(timestep) + torch.sin(timestep))
@@ -821,12 +849,11 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
                 latent_model_input = latents_model_input * torch.sqrt(
                     scm_timestep_expanded**2 + (1 - scm_timestep_expanded) ** 2
                 )
-                latent_model_input = latent_model_input.to(prompt_embeds.dtype)
 
                 # predict noise model_output
                 noise_pred = self.transformer(
-                    latent_model_input,
-                    encoder_hidden_states=prompt_embeds,
+                    latent_model_input.to(dtype=transformer_dtype),
+                    encoder_hidden_states=prompt_embeds.to(dtype=transformer_dtype),
                     encoder_attention_mask=prompt_attention_mask,
                     guidance=guidance,
                     timestep=scm_timestep,
@@ -866,9 +893,15 @@ class SanaSprintPipeline(DiffusionPipeline, SanaLoraLoaderMixin):
             image = latents
         else:
             latents = latents.to(self.vae.dtype)
+            torch_accelerator_module = getattr(torch, get_device(), torch.cuda)
+            oom_error = (
+                torch.OutOfMemoryError
+                if is_torch_version(">=", "2.5.0")
+                else torch_accelerator_module.OutOfMemoryError
+            )
             try:
                 image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False)[0]
-            except torch.cuda.OutOfMemoryError as e:
+            except oom_error as e:
                 warnings.warn(
                     f"{e}. \n"
                     f"Try to use VAE tiling for large images. For example: \n"

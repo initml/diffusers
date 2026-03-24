@@ -1,4 +1,4 @@
-# Copyright 2024 NVIDIA and The HuggingFace Team. All rights reserved.
+# Copyright 2025 NVIDIA and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
 
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
 
 import flax
 import jax
@@ -22,16 +21,19 @@ import jax.numpy as jnp
 from jax import random
 
 from ..configuration_utils import ConfigMixin, register_to_config
-from ..utils import BaseOutput
+from ..utils import BaseOutput, logging
 from .scheduling_utils_flax import FlaxSchedulerMixin
+
+
+logger = logging.get_logger(__name__)
 
 
 @flax.struct.dataclass
 class KarrasVeSchedulerState:
     # setable values
-    num_inference_steps: Optional[int] = None
-    timesteps: Optional[jnp.ndarray] = None
-    schedule: Optional[jnp.ndarray] = None  # sigma(t_i)
+    num_inference_steps: int = None
+    timesteps: jnp.ndarray | None = None
+    schedule: jnp.ndarray | None = None  # sigma(t_i)
 
     @classmethod
     def create(cls):
@@ -63,8 +65,8 @@ class FlaxKarrasVeScheduler(FlaxSchedulerMixin, ConfigMixin):
     the VE column of Table 1 from [1] for reference.
 
     [1] Karras, Tero, et al. "Elucidating the Design Space of Diffusion-Based Generative Models."
-    https://arxiv.org/abs/2206.00364 [2] Song, Yang, et al. "Score-based generative modeling through stochastic
-    differential equations." https://arxiv.org/abs/2011.13456
+    https://huggingface.co/papers/2206.00364 [2] Song, Yang, et al. "Score-based generative modeling through stochastic
+    differential equations." https://huggingface.co/papers/2011.13456
 
     [`~ConfigMixin`] takes care of storing all config attributes that are passed in the scheduler's `__init__`
     function, such as `num_train_timesteps`. They can be accessed via `scheduler.config.num_train_timesteps`.
@@ -72,8 +74,8 @@ class FlaxKarrasVeScheduler(FlaxSchedulerMixin, ConfigMixin):
     [`~SchedulerMixin.from_pretrained`] functions.
 
     For more details on the parameters, see the original paper's Appendix E.: "Elucidating the Design Space of
-    Diffusion-Based Generative Models." https://arxiv.org/abs/2206.00364. The grid search values used to find the
-    optimal {s_noise, s_churn, s_min, s_max} for a specific model are described in Table 5 of the paper.
+    Diffusion-Based Generative Models." https://huggingface.co/papers/2206.00364. The grid search values used to find
+    the optimal {s_noise, s_churn, s_min, s_max} for a specific model are described in Table 5 of the paper.
 
     Args:
         sigma_min (`float`): minimum noise magnitude
@@ -102,13 +104,16 @@ class FlaxKarrasVeScheduler(FlaxSchedulerMixin, ConfigMixin):
         s_min: float = 0.05,
         s_max: float = 50,
     ):
-        pass
+        logger.warning(
+            "Flax classes are deprecated and will be removed in Diffusers v1.0.0. We "
+            "recommend migrating to PyTorch classes or pinning your version of Diffusers."
+        )
 
     def create_state(self):
         return KarrasVeSchedulerState.create()
 
     def set_timesteps(
-        self, state: KarrasVeSchedulerState, num_inference_steps: int, shape: Tuple = ()
+        self, state: KarrasVeSchedulerState, num_inference_steps: int, shape: tuple = ()
     ) -> KarrasVeSchedulerState:
         """
         Sets the continuous timesteps used for the diffusion chain. Supporting function to be run before inference.
@@ -141,7 +146,7 @@ class FlaxKarrasVeScheduler(FlaxSchedulerMixin, ConfigMixin):
         sample: jnp.ndarray,
         sigma: float,
         key: jax.Array,
-    ) -> Tuple[jnp.ndarray, float]:
+    ) -> tuple[jnp.ndarray, float]:
         """
         Explicit Langevin-like "churn" step of adding noise to the sample according to a factor gamma_i ≥ 0 to reach a
         higher noise level sigma_hat = sigma_i + gamma_i*sigma_i.
@@ -169,7 +174,7 @@ class FlaxKarrasVeScheduler(FlaxSchedulerMixin, ConfigMixin):
         sigma_prev: float,
         sample_hat: jnp.ndarray,
         return_dict: bool = True,
-    ) -> Union[FlaxKarrasVeOutput, Tuple]:
+    ) -> FlaxKarrasVeOutput | tuple:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).
@@ -207,7 +212,7 @@ class FlaxKarrasVeScheduler(FlaxSchedulerMixin, ConfigMixin):
         sample_prev: jnp.ndarray,
         derivative: jnp.ndarray,
         return_dict: bool = True,
-    ) -> Union[FlaxKarrasVeOutput, Tuple]:
+    ) -> FlaxKarrasVeOutput | tuple:
         """
         Correct the predicted sample based on the output model_output of the network. TODO complete description
 

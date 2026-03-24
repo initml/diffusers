@@ -1,8 +1,8 @@
 # DreamBooth training example for SANA
 
-[DreamBooth](https://arxiv.org/abs/2208.12242) is a method to personalize text2image models like stable diffusion given just a few (3~5) images of a subject.
+[DreamBooth](https://huggingface.co/papers/2208.12242) is a method to personalize text2image models like stable diffusion given just a few (3~5) images of a subject.
 
-The `train_dreambooth_lora_sana.py` script shows how to implement the training procedure with [LoRA](https://huggingface.co/docs/peft/conceptual_guides/adapter#low-rank-adaptation-lora) and adapt it for [SANA](https://arxiv.org/abs/2410.10629). 
+The `train_dreambooth_lora_sana.py` script shows how to implement the training procedure with [LoRA](https://huggingface.co/docs/peft/conceptual_guides/adapter#low-rank-adaptation-lora) and adapt it for [SANA](https://huggingface.co/papers/2410.10629). 
 
 
 This will also allow us to push the trained model parameters to the Hugging Face Hub platform.
@@ -101,7 +101,7 @@ accelerate launch train_dreambooth_lora_sana.py \
 For using `push_to_hub`, make you're logged into your Hugging Face account:
 
 ```bash
-huggingface-cli login
+hf auth login
 ```
 
 To better track our training experiments, we're using the following flags in the command above:
@@ -111,9 +111,28 @@ To better track our training experiments, we're using the following flags in the
 
 ## Notes
 
+### LoRA Rank and Alpha
+Two key LoRA hyperparameters are LoRA rank and LoRA alpha. 
+- `--rank`: Defines the dimension of the trainable LoRA matrices. A higher rank means more expressiveness and capacity to learn (and more parameters).
+- `--lora_alpha`: A scaling factor for the LoRA's output. The LoRA update is scaled by lora_alpha / lora_rank.
+- lora_alpha vs. rank:
+This ratio dictates the LoRA's effective strength:
+lora_alpha == rank: Scaling factor is 1. The LoRA is applied with its learned strength. (e.g., alpha=16, rank=16)
+lora_alpha < rank: Scaling factor < 1. Reduces the LoRA's impact. Useful for subtle changes or to prevent overpowering the base model. (e.g., alpha=8, rank=16)
+lora_alpha > rank: Scaling factor > 1. Amplifies the LoRA's impact. Allows a lower rank LoRA to have a stronger effect. (e.g., alpha=32, rank=16)
+
+> [!TIP]
+> A common starting point is to set `lora_alpha` equal to `rank`. 
+> Some also set `lora_alpha` to be twice the `rank` (e.g., lora_alpha=32 for lora_rank=16) 
+> to give the LoRA updates more influence without increasing parameter count. 
+> If you find your LoRA is "overcooking" or learning too aggressively, consider setting `lora_alpha` to half of `rank` 
+> (e.g., lora_alpha=8 for rank=16). Experimentation is often key to finding the optimal balance for your use case.
+
+### Additional CLI arguments
+
 Additionally, we welcome you to explore the following CLI arguments:
 
-* `--lora_layers`: The transformer modules to apply LoRA training on. Please specify the layers in a comma seperated. E.g. - "to_k,to_q,to_v" will result in lora training of attention layers only.
+* `--lora_layers`: The transformer modules to apply LoRA training on. Please specify the layers in a comma separated. E.g. - "to_k,to_q,to_v" will result in lora training of attention layers only.
 * `--complex_human_instruction`: Instructions for complex human attention as shown in [here](https://github.com/NVlabs/Sana/blob/main/configs/sana_app_config/Sana_1600M_app.yaml#L55).
 * `--max_sequence_length`: Maximum sequence length to use for text embeddings.
 

@@ -1,4 +1,4 @@
-# Copyright 2024 the Latte Team and The HuggingFace Team. All rights reserved.
+# Copyright 2025 the Latte Team and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,16 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
-
 import torch
 from torch import nn
 
 from ...configuration_utils import ConfigMixin, register_to_config
-from ...models.embeddings import PixArtAlphaTextProjection, get_1d_sincos_pos_embed_from_grid
 from ..attention import BasicTransformerBlock
 from ..cache_utils import CacheMixin
-from ..embeddings import PatchEmbed
+from ..embeddings import PatchEmbed, PixArtAlphaTextProjection, get_1d_sincos_pos_embed_from_grid
 from ..modeling_outputs import Transformer2DModelOutput
 from ..modeling_utils import ModelMixin
 from ..normalization import AdaLayerNormSingle
@@ -31,7 +28,7 @@ class LatteTransformer3DModel(ModelMixin, ConfigMixin, CacheMixin):
     _supports_gradient_checkpointing = True
 
     """
-    A 3D Transformer model for video-like data, paper: https://arxiv.org/abs/2401.03048, offical code:
+    A 3D Transformer model for video-like data, paper: https://huggingface.co/papers/2401.03048, official code:
     https://github.com/Vchitect/Latte
 
     Parameters:
@@ -74,16 +71,16 @@ class LatteTransformer3DModel(ModelMixin, ConfigMixin, CacheMixin):
         self,
         num_attention_heads: int = 16,
         attention_head_dim: int = 88,
-        in_channels: Optional[int] = None,
-        out_channels: Optional[int] = None,
+        in_channels: int | None = None,
+        out_channels: int | None = None,
         num_layers: int = 1,
         dropout: float = 0.0,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         attention_bias: bool = False,
         sample_size: int = 64,
-        patch_size: Optional[int] = None,
+        patch_size: int | None = None,
         activation_fn: str = "geglu",
-        num_embeds_ada_norm: Optional[int] = None,
+        num_embeds_ada_norm: int | None = None,
         norm_type: str = "layer_norm",
         norm_elementwise_affine: bool = True,
         norm_eps: float = 1e-5,
@@ -169,9 +166,9 @@ class LatteTransformer3DModel(ModelMixin, ConfigMixin, CacheMixin):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        timestep: Optional[torch.LongTensor] = None,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
-        encoder_attention_mask: Optional[torch.Tensor] = None,
+        timestep: torch.LongTensor | None = None,
+        encoder_hidden_states: torch.Tensor | None = None,
+        encoder_attention_mask: torch.Tensor | None = None,
         enable_temporal_attentions: bool = True,
         return_dict: bool = True,
     ):
@@ -217,7 +214,7 @@ class LatteTransformer3DModel(ModelMixin, ConfigMixin, CacheMixin):
         )
         num_patches = height * width
 
-        hidden_states = self.pos_embed(hidden_states)  # alrady add positional embeddings
+        hidden_states = self.pos_embed(hidden_states)  # already add positional embeddings
 
         added_cond_kwargs = {"resolution": None, "aspect_ratio": None}
         timestep, embedded_timestep = self.adaln_single(

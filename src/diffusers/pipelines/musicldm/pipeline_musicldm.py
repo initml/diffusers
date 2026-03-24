@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -35,8 +35,8 @@ from ...utils import (
     logging,
     replace_example_docstring,
 )
-from ...utils.torch_utils import randn_tensor
-from ..pipeline_utils import AudioPipelineOutput, DiffusionPipeline, StableDiffusionMixin
+from ...utils.torch_utils import empty_device_cache, get_device, randn_tensor
+from ..pipeline_utils import AudioPipelineOutput, DeprecatedPipelineMixin, DiffusionPipeline, StableDiffusionMixin
 
 
 if is_librosa_available():
@@ -76,7 +76,8 @@ EXAMPLE_DOC_STRING = """
 """
 
 
-class MusicLDMPipeline(DiffusionPipeline, StableDiffusionMixin):
+class MusicLDMPipeline(DeprecatedPipelineMixin, DiffusionPipeline, StableDiffusionMixin):
+    _last_supported_version = "0.33.1"
     r"""
     Pipeline for text-to-audio generation using MusicLDM.
 
@@ -105,9 +106,9 @@ class MusicLDMPipeline(DiffusionPipeline, StableDiffusionMixin):
     def __init__(
         self,
         vae: AutoencoderKL,
-        text_encoder: Union[ClapTextModelWithProjection, ClapModel],
-        tokenizer: Union[RobertaTokenizer, RobertaTokenizerFast],
-        feature_extractor: Optional[ClapFeatureExtractor],
+        text_encoder: ClapTextModelWithProjection | ClapModel,
+        tokenizer: RobertaTokenizer | RobertaTokenizerFast,
+        feature_extractor: ClapFeatureExtractor | None,
         unet: UNet2DConditionModel,
         scheduler: KarrasDiffusionSchedulers,
         vocoder: SpeechT5HifiGan,
@@ -132,14 +133,14 @@ class MusicLDMPipeline(DiffusionPipeline, StableDiffusionMixin):
         num_waveforms_per_prompt,
         do_classifier_free_guidance,
         negative_prompt=None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
+        prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
     ):
         r"""
         Encodes the prompt into text encoder hidden states.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 prompt to be encoded
             device (`torch.device`):
                 torch device
@@ -147,7 +148,7 @@ class MusicLDMPipeline(DiffusionPipeline, StableDiffusionMixin):
                 number of waveforms that should be generated per prompt
             do_classifier_free_guidance (`bool`):
                 whether to use classifier free guidance or not
-            negative_prompt (`str` or `List[str]`, *optional*):
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts not to guide the audio generation. If not defined, one has to pass
                 `negative_prompt_embeds` instead. Ignored when not using guidance (i.e., ignored if `guidance_scale` is
                 less than `1`).
@@ -206,7 +207,7 @@ class MusicLDMPipeline(DiffusionPipeline, StableDiffusionMixin):
 
         # get unconditional embeddings for classifier free guidance
         if do_classifier_free_guidance and negative_prompt_embeds is None:
-            uncond_tokens: List[str]
+            uncond_tokens: list[str]
             if negative_prompt is None:
                 uncond_tokens = [""] * batch_size
             elif type(prompt) is not type(negative_prompt):
@@ -297,7 +298,7 @@ class MusicLDMPipeline(DiffusionPipeline, StableDiffusionMixin):
     def prepare_extra_step_kwargs(self, generator, eta):
         # prepare extra kwargs for the scheduler step, since not all schedulers have the same signature
         # eta (η) is only used with the DDIMScheduler, it will be ignored for other schedulers.
-        # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
+        # eta corresponds to η in DDIM paper: https://huggingface.co/papers/2010.02502
         # and should be between [0, 1]
 
         accepts_eta = "eta" in set(inspect.signature(self.scheduler.step).parameters.keys())
@@ -396,20 +397,22 @@ class MusicLDMPipeline(DiffusionPipeline, StableDiffusionMixin):
     def enable_model_cpu_offload(self, gpu_id=0):
         r"""
         Offloads all models to CPU using accelerate, reducing memory usage with a low impact on performance. Compared
-        to `enable_sequential_cpu_offload`, this method moves one whole model at a time to the GPU when its `forward`
-        method is called, and the model remains in GPU until the next model runs. Memory savings are lower than with
-        `enable_sequential_cpu_offload`, but performance is much better due to the iterative execution of the `unet`.
+        to `enable_sequential_cpu_offload`, this method moves one whole model at a time to the accelerator when its
+        `forward` method is called, and the model remains in accelerator until the next model runs. Memory savings are
+        lower than with `enable_sequential_cpu_offload`, but performance is much better due to the iterative execution
+        of the `unet`.
         """
         if is_accelerate_available() and is_accelerate_version(">=", "0.17.0.dev0"):
             from accelerate import cpu_offload_with_hook
         else:
             raise ImportError("`enable_model_cpu_offload` requires `accelerate v0.17.0` or higher.")
 
-        device = torch.device(f"cuda:{gpu_id}")
+        device_type = get_device()
+        device = torch.device(f"{device_type}:{gpu_id}")
 
         if self.device.type != "cpu":
             self.to("cpu", silence_dtype_warnings=True)
-            torch.cuda.empty_cache()  # otherwise we don't see the memory savings (but they probably exist)
+            empty_device_cache()  # otherwise we don't see the memory savings (but they probably exist)
 
         model_sequence = [
             self.text_encoder.text_model,
@@ -431,28 +434,28 @@ class MusicLDMPipeline(DiffusionPipeline, StableDiffusionMixin):
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
         self,
-        prompt: Union[str, List[str]] = None,
-        audio_length_in_s: Optional[float] = None,
+        prompt: str | list[str] = None,
+        audio_length_in_s: float | None = None,
         num_inference_steps: int = 200,
         guidance_scale: float = 2.0,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        num_waveforms_per_prompt: Optional[int] = 1,
+        negative_prompt: str | list[str] | None = None,
+        num_waveforms_per_prompt: int | None = 1,
         eta: float = 0.0,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
+        prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
         return_dict: bool = True,
-        callback: Optional[Callable[[int, int, torch.Tensor], None]] = None,
-        callback_steps: Optional[int] = 1,
-        cross_attention_kwargs: Optional[Dict[str, Any]] = None,
-        output_type: Optional[str] = "np",
+        callback: Callable[[int, int, torch.Tensor], None] | None = None,
+        callback_steps: int | None = 1,
+        cross_attention_kwargs: dict[str, Any] | None = None,
+        output_type: str | None = "np",
     ):
         r"""
         The call function to the pipeline for generation.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide audio generation. If not defined, you need to pass `prompt_embeds`.
             audio_length_in_s (`int`, *optional*, defaults to 10.24):
                 The length of the generated audio sample in seconds.
@@ -462,7 +465,7 @@ class MusicLDMPipeline(DiffusionPipeline, StableDiffusionMixin):
             guidance_scale (`float`, *optional*, defaults to 2.0):
                 A higher guidance scale value encourages the model to generate audio that is closely linked to the text
                 `prompt` at the expense of lower sound quality. Guidance scale is enabled when `guidance_scale > 1`.
-            negative_prompt (`str` or `List[str]`, *optional*):
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide what to not include in audio generation. If not defined, you need to
                 pass `negative_prompt_embeds` instead. Ignored when not using guidance (`guidance_scale < 1`).
             num_waveforms_per_prompt (`int`, *optional*, defaults to 1):
@@ -472,9 +475,9 @@ class MusicLDMPipeline(DiffusionPipeline, StableDiffusionMixin):
                 and the input text. This scoring ranks the generated waveforms based on their cosine similarity to text
                 input in the joint text-audio embedding space.
             eta (`float`, *optional*, defaults to 0.0):
-                Corresponds to parameter eta (η) from the [DDIM](https://arxiv.org/abs/2010.02502) paper. Only applies
-                to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+                Corresponds to parameter eta (η) from the [DDIM](https://huggingface.co/papers/2010.02502) paper. Only
+                applies to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 A [`torch.Generator`](https://pytorch.org/docs/stable/generated/torch.Generator.html) to make
                 generation deterministic.
             latents (`torch.Tensor`, *optional*):
@@ -548,7 +551,7 @@ class MusicLDMPipeline(DiffusionPipeline, StableDiffusionMixin):
 
         device = self._execution_device
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
-        # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
+        # of the Imagen paper: https://huggingface.co/papers/2205.11487 . `guidance_scale = 1`
         # corresponds to doing no classifier free guidance.
         do_classifier_free_guidance = guidance_scale > 1.0
 

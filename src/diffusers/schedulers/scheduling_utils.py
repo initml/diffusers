@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@ import importlib
 import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Union
 
 import torch
 from huggingface_hub.utils import validate_hf_hub_args
@@ -83,7 +82,7 @@ class SchedulerMixin(PushToHubMixin):
     the scheduler's `__init__` function, and the attributes can be accessed by `scheduler.config.num_train_timesteps`.
 
     Class attributes:
-        - **_compatibles** (`List[str]`) -- A list of scheduler classes that are compatible with the parent scheduler
+        - **_compatibles** (`list[str]`) -- A list of scheduler classes that are compatible with the parent scheduler
           class. Use [`~ConfigMixin.from_config`] to load a different compatible scheduler class (should be overridden
           by parent class).
     """
@@ -96,8 +95,8 @@ class SchedulerMixin(PushToHubMixin):
     @validate_hf_hub_args
     def from_pretrained(
         cls,
-        pretrained_model_name_or_path: Optional[Union[str, os.PathLike]] = None,
-        subfolder: Optional[str] = None,
+        pretrained_model_name_or_path: str | os.PathLike | None = None,
+        subfolder: str | None = None,
         return_unused_kwargs=False,
         **kwargs,
     ) -> Self:
@@ -116,14 +115,14 @@ class SchedulerMixin(PushToHubMixin):
                 The subfolder location of a model file within a larger model repository on the Hub or locally.
             return_unused_kwargs (`bool`, *optional*, defaults to `False`):
                 Whether kwargs that are not consumed by the Python class should be returned or not.
-            cache_dir (`Union[str, os.PathLike]`, *optional*):
+            cache_dir (`str | os.PathLike`, *optional*):
                 Path to a directory where a downloaded pretrained model configuration is cached if the standard cache
                 is not used.
             force_download (`bool`, *optional*, defaults to `False`):
                 Whether or not to force the (re-)download of the model weights and configuration files, overriding the
                 cached versions if they exist.
 
-            proxies (`Dict[str, str]`, *optional*):
+            proxies (`dict[str, str]`, *optional*):
                 A dictionary of proxy servers to use by protocol or endpoint, for example, `{'http': 'foo.bar:3128',
                 'http://hostname': 'foo.bar:4012'}`. The proxies are used on each request.
             output_loading_info(`bool`, *optional*, defaults to `False`):
@@ -138,14 +137,10 @@ class SchedulerMixin(PushToHubMixin):
                 The specific model version to use. It can be a branch name, a tag name, a commit id, or any identifier
                 allowed by Git.
 
-        <Tip>
-
-        To use private or [gated models](https://huggingface.co/docs/hub/models-gated#gated-models), log-in with
-        `huggingface-cli login`. You can also activate the special
-        ["offline-mode"](https://huggingface.co/diffusers/installation.html#offline-mode) to use this method in a
+        > [!TIP] > To use private or [gated models](https://huggingface.co/docs/hub/models-gated#gated-models), log-in
+        with `hf > auth login`. You can also activate the special >
+        ["offline-mode"](https://huggingface.co/diffusers/installation.html#offline-mode) to use this method in a >
         firewalled environment.
-
-        </Tip>
 
         """
         config, kwargs, commit_hash = cls.load_config(
@@ -157,7 +152,7 @@ class SchedulerMixin(PushToHubMixin):
         )
         return cls.from_config(config, return_unused_kwargs=return_unused_kwargs, **kwargs)
 
-    def save_pretrained(self, save_directory: Union[str, os.PathLike], push_to_hub: bool = False, **kwargs):
+    def save_pretrained(self, save_directory: str | os.PathLike, push_to_hub: bool = False, **kwargs):
         """
         Save a scheduler configuration object to a directory so that it can be reloaded using the
         [`~SchedulerMixin.from_pretrained`] class method.
@@ -169,7 +164,7 @@ class SchedulerMixin(PushToHubMixin):
                 Whether or not to push your model to the Hugging Face Hub after saving it. You can specify the
                 repository you want to push to with `repo_id` (will default to the name of `save_directory` in your
                 namespace).
-            kwargs (`Dict[str, Any]`, *optional*):
+            kwargs (`dict[str, Any]`, *optional*):
                 Additional keyword arguments passed along to the [`~utils.PushToHubMixin.push_to_hub`] method.
         """
         self.save_config(save_directory=save_directory, push_to_hub=push_to_hub, **kwargs)
@@ -180,7 +175,7 @@ class SchedulerMixin(PushToHubMixin):
         Returns all schedulers that are compatible with this scheduler
 
         Returns:
-            `List[SchedulerMixin]`: List of compatible schedulers
+            `list[SchedulerMixin]`: list of compatible schedulers
         """
         return self._get_compatibles()
 

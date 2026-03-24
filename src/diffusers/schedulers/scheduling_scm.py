@@ -1,4 +1,4 @@
-# # Copyright 2024 Sana-Sprint Authors and The HuggingFace Team. All rights reserved.
+# # Copyright 2025 Sana-Sprint Authors and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 # and https://github.com/hojonathanho/diffusion
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -46,7 +45,7 @@ class SCMSchedulerOutput(BaseOutput):
     """
 
     prev_sample: torch.Tensor
-    pred_original_sample: Optional[torch.Tensor] = None
+    pred_original_sample: torch.Tensor | None = None
 
 
 class SCMScheduler(SchedulerMixin, ConfigMixin):
@@ -109,7 +108,7 @@ class SCMScheduler(SchedulerMixin, ConfigMixin):
         Sets the begin index for the scheduler. This function should be run from pipeline before the inference.
 
         Args:
-            begin_index (`int`):
+            begin_index (`int`, defaults to `0`):
                 The begin index for the scheduler.
         """
         self._begin_index = begin_index
@@ -118,7 +117,7 @@ class SCMScheduler(SchedulerMixin, ConfigMixin):
         self,
         num_inference_steps: int,
         timesteps: torch.Tensor = None,
-        device: Union[str, torch.device] = None,
+        device: str | torch.device = None,
         max_timesteps: float = 1.57080,
         intermediate_timesteps: float = 1.3,
     ):
@@ -168,13 +167,19 @@ class SCMScheduler(SchedulerMixin, ConfigMixin):
         else:
             # max_timesteps=arctan(80/0.5)=1.56454 is the default from sCM paper, we choose a different value here
             self.timesteps = torch.linspace(max_timesteps, 0, num_inference_steps + 1, device=device).float()
-        print(f"Set timesteps: {self.timesteps}")
 
         self._step_index = None
         self._begin_index = None
 
     # Copied from diffusers.schedulers.scheduling_euler_discrete.EulerDiscreteScheduler._init_step_index
-    def _init_step_index(self, timestep):
+    def _init_step_index(self, timestep: float | torch.Tensor) -> None:
+        """
+        Initialize the step index for the scheduler based on the given timestep.
+
+        Args:
+            timestep (`float` or `torch.Tensor`):
+                The current timestep to initialize the step index from.
+        """
         if self.begin_index is None:
             if isinstance(timestep, torch.Tensor):
                 timestep = timestep.to(self.timesteps.device)
@@ -183,7 +188,23 @@ class SCMScheduler(SchedulerMixin, ConfigMixin):
             self._step_index = self._begin_index
 
     # Copied from diffusers.schedulers.scheduling_euler_discrete.EulerDiscreteScheduler.index_for_timestep
-    def index_for_timestep(self, timestep, schedule_timesteps=None):
+    def index_for_timestep(
+        self, timestep: float | torch.Tensor, schedule_timesteps: torch.Tensor | None = None
+    ) -> int:
+        """
+        Find the index of a given timestep in the timestep schedule.
+
+        Args:
+            timestep (`float` or `torch.Tensor`):
+                The timestep value to find in the schedule.
+            schedule_timesteps (`torch.Tensor`, *optional*):
+                The timestep schedule to search in. If `None`, uses `self.timesteps`.
+
+        Returns:
+            `int`:
+                The index of the timestep in the schedule. For the very first step, returns the second index if
+                multiple matches exist to avoid skipping a sigma when starting mid-schedule (e.g., for image-to-image).
+        """
         if schedule_timesteps is None:
             schedule_timesteps = self.timesteps
 
@@ -204,7 +225,7 @@ class SCMScheduler(SchedulerMixin, ConfigMixin):
         sample: torch.FloatTensor,
         generator: torch.Generator = None,
         return_dict: bool = True,
-    ) -> Union[SCMSchedulerOutput, Tuple]:
+    ) -> SCMSchedulerOutput | tuple:
         """
         Predict the sample from the previous timestep by reversing the SDE. This function propagates the diffusion
         process from the learned model outputs (most often the predicted noise).

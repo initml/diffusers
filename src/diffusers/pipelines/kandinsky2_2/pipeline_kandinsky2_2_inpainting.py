@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from copy import deepcopy
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable
 
 import numpy as np
 import PIL.Image
@@ -132,7 +132,7 @@ def prepare_mask_and_masked_image(image, mask, height, width):
     binarized (``mask > 0.5``) and cast to ``torch.float32`` too.
 
     Args:
-        image (Union[np.array, PIL.Image, torch.Tensor]): The image to inpaint.
+        image (np.array | PIL.Image | torch.Tensor): The image to inpaint.
             It can be a ``PIL.Image``, or a ``height x width x 3`` ``np.array`` or a ``channels x height x width``
             ``torch.Tensor`` or a ``batch x channels x height x width`` ``torch.Tensor``.
         mask (_type_): The mask to apply to the image, i.e. regions to inpaint.
@@ -302,28 +302,28 @@ class KandinskyV22InpaintPipeline(DiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
-        image_embeds: Union[torch.Tensor, List[torch.Tensor]],
-        image: Union[torch.Tensor, PIL.Image.Image],
-        mask_image: Union[torch.Tensor, PIL.Image.Image, np.ndarray],
-        negative_image_embeds: Union[torch.Tensor, List[torch.Tensor]],
+        image_embeds: torch.Tensor | list[torch.Tensor],
+        image: torch.Tensor | PIL.Image.Image,
+        mask_image: torch.Tensor | PIL.Image.Image | np.ndarray,
+        negative_image_embeds: torch.Tensor | list[torch.Tensor],
         height: int = 512,
         width: int = 512,
         num_inference_steps: int = 100,
         guidance_scale: float = 4.0,
         num_images_per_prompt: int = 1,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        output_type: Optional[str] = "pil",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
-        callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
-        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        callback_on_step_end: Callable[[int, int], None] | None = None,
+        callback_on_step_end_tensor_inputs: list[str] = ["latents"],
         **kwargs,
     ):
         """
         Function invoked when calling the pipeline for generation.
 
         Args:
-            image_embeds (`torch.Tensor` or `List[torch.Tensor]`):
+            image_embeds (`torch.Tensor` or `list[torch.Tensor]`):
                 The clip image embeddings for text prompt, that will be used to condition the image generation.
             image (`PIL.Image.Image`):
                 `Image`, or tensor representing an image batch which will be inpainted, *i.e.* parts of the image will
@@ -333,7 +333,7 @@ class KandinskyV22InpaintPipeline(DiffusionPipeline):
                 black pixels will be preserved. If `mask_image` is a PIL image, it will be converted to a single
                 channel (luminance) before use. If it's a tensor, it should contain one color channel (L) instead of 3,
                 so the expected shape would be `(B, H, W, 1)`.
-            negative_image_embeds (`torch.Tensor` or `List[torch.Tensor]`):
+            negative_image_embeds (`torch.Tensor` or `list[torch.Tensor]`):
                 The clip image embeddings for negative text prompt, will be used to condition the image generation.
             height (`int`, *optional*, defaults to 512):
                 The height in pixels of the generated image.
@@ -343,20 +343,20 @@ class KandinskyV22InpaintPipeline(DiffusionPipeline):
                 The number of denoising steps. More denoising steps usually lead to a higher quality image at the
                 expense of slower inference.
             guidance_scale (`float`, *optional*, defaults to 4.0):
-                Guidance scale as defined in [Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598).
-                `guidance_scale` is defined as `w` of equation 2. of [Imagen
-                Paper](https://arxiv.org/pdf/2205.11487.pdf). Guidance scale is enabled by setting `guidance_scale >
-                1`. Higher guidance scale encourages to generate images that are closely linked to the text `prompt`,
-                usually at the expense of lower image quality.
+                Guidance scale as defined in [Classifier-Free Diffusion
+                Guidance](https://huggingface.co/papers/2207.12598). `guidance_scale` is defined as `w` of equation 2.
+                of [Imagen Paper](https://huggingface.co/papers/2205.11487). Guidance scale is enabled by setting
+                `guidance_scale > 1`. Higher guidance scale encourages to generate images that are closely linked to
+                the text `prompt`, usually at the expense of lower image quality.
             num_images_per_prompt (`int`, *optional*, defaults to 1):
                 The number of images to generate per prompt.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 One or a list of [torch generator(s)](https://pytorch.org/docs/stable/generated/torch.Generator.html)
                 to make generation deterministic.
             latents (`torch.Tensor`, *optional*):
                 Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for image
                 generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
-                tensor will ge generated by sampling using the supplied random `generator`.
+                tensor will be generated by sampling using the supplied random `generator`.
             output_type (`str`, *optional*, defaults to `"pil"`):
                 The output format of the generate image. Choose between: `"pil"` (`PIL.Image.Image`), `"np"`
                 (`np.array`) or `"pt"` (`torch.Tensor`).
@@ -367,7 +367,7 @@ class KandinskyV22InpaintPipeline(DiffusionPipeline):
                 with the following arguments: `callback_on_step_end(self: DiffusionPipeline, step: int, timestep: int,
                 callback_kwargs: Dict)`. `callback_kwargs` will include a list of all tensors as specified by
                 `callback_on_step_end_tensor_inputs`.
-            callback_on_step_end_tensor_inputs (`List`, *optional*):
+            callback_on_step_end_tensor_inputs (`list`, *optional*):
                 The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
                 will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
                 `._callback_tensor_inputs` attribute of your pipeline class.
@@ -386,7 +386,7 @@ class KandinskyV22InpaintPipeline(DiffusionPipeline):
                 "As of diffusers==0.19.0 this behavior has been inverted. Now white pixels are repainted and black pixels are preserved. "
                 "This way, Kandinsky's masking behavior is aligned with Stable Diffusion. "
                 "THIS means that you HAVE to invert the input mask to have the same behavior as before as explained in https://github.com/huggingface/diffusers/pull/4207. "
-                "This warning will be surpressed after the first inference call and will be removed in diffusers>0.23.0"
+                "This warning will be suppressed after the first inference call and will be removed in diffusers>0.23.0"
             )
             self._warn_has_been_called = True
 

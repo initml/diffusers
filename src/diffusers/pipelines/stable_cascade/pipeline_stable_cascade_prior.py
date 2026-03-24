@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 from dataclasses import dataclass
 from math import ceil
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable
 
 import numpy as np
 import PIL
@@ -25,7 +25,7 @@ from ...models import StableCascadeUNet
 from ...schedulers import DDPMWuerstchenScheduler
 from ...utils import BaseOutput, is_torch_xla_available, logging, replace_example_docstring
 from ...utils.torch_utils import randn_tensor
-from ..pipeline_utils import DiffusionPipeline
+from ..pipeline_utils import DeprecatedPipelineMixin, DiffusionPipeline
 
 
 if is_torch_xla_available():
@@ -70,14 +70,14 @@ class StableCascadePriorPipelineOutput(BaseOutput):
             Text embeddings for the negative prompt.
     """
 
-    image_embeddings: Union[torch.Tensor, np.ndarray]
-    prompt_embeds: Union[torch.Tensor, np.ndarray]
-    prompt_embeds_pooled: Union[torch.Tensor, np.ndarray]
-    negative_prompt_embeds: Union[torch.Tensor, np.ndarray]
-    negative_prompt_embeds_pooled: Union[torch.Tensor, np.ndarray]
+    image_embeddings: torch.Tensor | np.ndarray
+    prompt_embeds: torch.Tensor | np.ndarray
+    prompt_embeds_pooled: torch.Tensor | np.ndarray
+    negative_prompt_embeds: torch.Tensor | np.ndarray
+    negative_prompt_embeds_pooled: torch.Tensor | np.ndarray
 
 
-class StableCascadePriorPipeline(DiffusionPipeline):
+class StableCascadePriorPipeline(DeprecatedPipelineMixin, DiffusionPipeline):
     """
     Pipeline for generating image prior for Stable Cascade.
 
@@ -103,6 +103,8 @@ class StableCascadePriorPipeline(DiffusionPipeline):
             Default resolution for multiple images generated.
     """
 
+    _last_supported_version = "0.35.2"
+
     unet_name = "prior"
     text_encoder_name = "text_encoder"
     model_cpu_offload_seq = "image_encoder->text_encoder->prior"
@@ -116,8 +118,8 @@ class StableCascadePriorPipeline(DiffusionPipeline):
         prior: StableCascadeUNet,
         scheduler: DDPMWuerstchenScheduler,
         resolution_multiple: float = 42.67,
-        feature_extractor: Optional[CLIPImageProcessor] = None,
-        image_encoder: Optional[CLIPVisionModelWithProjection] = None,
+        feature_extractor: CLIPImageProcessor | None = None,
+        image_encoder: CLIPVisionModelWithProjection | None = None,
     ) -> None:
         super().__init__()
         self.register_modules(
@@ -158,10 +160,10 @@ class StableCascadePriorPipeline(DiffusionPipeline):
         do_classifier_free_guidance,
         prompt=None,
         negative_prompt=None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_embeds_pooled: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds_pooled: Optional[torch.Tensor] = None,
+        prompt_embeds: torch.Tensor | None = None,
+        prompt_embeds_pooled: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds_pooled: torch.Tensor | None = None,
     ):
         if prompt_embeds is None:
             # get prompt text embeddings
@@ -203,7 +205,7 @@ class StableCascadePriorPipeline(DiffusionPipeline):
         prompt_embeds_pooled = prompt_embeds_pooled.repeat_interleave(num_images_per_prompt, dim=0)
 
         if negative_prompt_embeds is None and do_classifier_free_guidance:
-            uncond_tokens: List[str]
+            uncond_tokens: list[str]
             if negative_prompt is None:
                 uncond_tokens = [""] * batch_size
             elif type(prompt) is not type(negative_prompt):
@@ -374,32 +376,32 @@ class StableCascadePriorPipeline(DiffusionPipeline):
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
         self,
-        prompt: Optional[Union[str, List[str]]] = None,
-        images: Union[torch.Tensor, PIL.Image.Image, List[torch.Tensor], List[PIL.Image.Image]] = None,
+        prompt: str | list[str] | None = None,
+        images: torch.Tensor | PIL.Image.Image | list[torch.Tensor] | list[PIL.Image.Image] = None,
         height: int = 1024,
         width: int = 1024,
         num_inference_steps: int = 20,
-        timesteps: List[float] = None,
+        timesteps: list[float] = None,
         guidance_scale: float = 4.0,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        prompt_embeds_pooled: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds_pooled: Optional[torch.Tensor] = None,
-        image_embeds: Optional[torch.Tensor] = None,
-        num_images_per_prompt: Optional[int] = 1,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        output_type: Optional[str] = "pt",
+        negative_prompt: str | list[str] | None = None,
+        prompt_embeds: torch.Tensor | None = None,
+        prompt_embeds_pooled: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds_pooled: torch.Tensor | None = None,
+        image_embeds: torch.Tensor | None = None,
+        num_images_per_prompt: int | None = 1,
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
+        output_type: str | None = "pt",
         return_dict: bool = True,
-        callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
-        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        callback_on_step_end: Callable[[int, int], None] | None = None,
+        callback_on_step_end_tensor_inputs: list[str] = ["latents"],
     ):
         """
         Function invoked when calling the pipeline for generation.
 
         Args:
-            prompt (`str` or `List[str]`):
+            prompt (`str` or `list[str]`):
                 The prompt or prompts to guide the image generation.
             height (`int`, *optional*, defaults to 1024):
                 The height in pixels of the generated image.
@@ -409,12 +411,12 @@ class StableCascadePriorPipeline(DiffusionPipeline):
                 The number of denoising steps. More denoising steps usually lead to a higher quality image at the
                 expense of slower inference.
             guidance_scale (`float`, *optional*, defaults to 8.0):
-                Guidance scale as defined in [Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598).
-                `decoder_guidance_scale` is defined as `w` of equation 2. of [Imagen
-                Paper](https://arxiv.org/pdf/2205.11487.pdf). Guidance scale is enabled by setting
-                `decoder_guidance_scale > 1`. Higher guidance scale encourages to generate images that are closely
-                linked to the text `prompt`, usually at the expense of lower image quality.
-            negative_prompt (`str` or `List[str]`, *optional*):
+                Guidance scale as defined in [Classifier-Free Diffusion
+                Guidance](https://huggingface.co/papers/2207.12598). `decoder_guidance_scale` is defined as `w` of
+                equation 2. of [Imagen Paper](https://huggingface.co/papers/2205.11487). Guidance scale is enabled by
+                setting `decoder_guidance_scale > 1`. Higher guidance scale encourages to generate images that are
+                closely linked to the text `prompt`, usually at the expense of lower image quality.
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts not to guide the image generation. Ignored when not using guidance (i.e., ignored
                 if `decoder_guidance_scale` is less than `1`).
             prompt_embeds (`torch.Tensor`, *optional*):
@@ -436,13 +438,13 @@ class StableCascadePriorPipeline(DiffusionPipeline):
                 not provided, image embeddings will be generated from `image` input argument if existing.
             num_images_per_prompt (`int`, *optional*, defaults to 1):
                 The number of images to generate per prompt.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 One or a list of [torch generator(s)](https://pytorch.org/docs/stable/generated/torch.Generator.html)
                 to make generation deterministic.
             latents (`torch.Tensor`, *optional*):
                 Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for image
                 generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
-                tensor will ge generated by sampling using the supplied random `generator`.
+                tensor will be generated by sampling using the supplied random `generator`.
             output_type (`str`, *optional*, defaults to `"pil"`):
                 The output format of the generate image. Choose between: `"pil"` (`PIL.Image.Image`), `"np"`
                 (`np.array`) or `"pt"` (`torch.Tensor`).
@@ -453,7 +455,7 @@ class StableCascadePriorPipeline(DiffusionPipeline):
                 with the following arguments: `callback_on_step_end(self: DiffusionPipeline, step: int, timestep: int,
                 callback_kwargs: Dict)`. `callback_kwargs` will include a list of all tensors as specified by
                 `callback_on_step_end_tensor_inputs`.
-            callback_on_step_end_tensor_inputs (`List`, *optional*):
+            callback_on_step_end_tensor_inputs (`list`, *optional*):
                 The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
                 will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
                 `._callback_tensor_inputs` attribute of your pipeline class.
@@ -626,11 +628,11 @@ class StableCascadePriorPipeline(DiffusionPipeline):
         self.maybe_free_model_hooks()
 
         if output_type == "np":
-            latents = latents.cpu().float().numpy()  # float() as bfloat16-> numpy doesnt work
-            prompt_embeds = prompt_embeds.cpu().float().numpy()  # float() as bfloat16-> numpy doesnt work
+            latents = latents.cpu().float().numpy()  # float() as bfloat16-> numpy doesn't work
+            prompt_embeds = prompt_embeds.cpu().float().numpy()  # float() as bfloat16-> numpy doesn't work
             negative_prompt_embeds = (
                 negative_prompt_embeds.cpu().float().numpy() if negative_prompt_embeds is not None else None
-            )  # float() as bfloat16-> numpy doesnt work
+            )  # float() as bfloat16-> numpy doesn't work
 
         if not return_dict:
             return (

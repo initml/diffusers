@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,7 +21,8 @@ import numpy as np
 import torch
 
 from diffusers import DDIMScheduler, KandinskyV22Pipeline, KandinskyV22PriorPipeline, UNet2DConditionModel, VQModel
-from diffusers.utils.testing_utils import (
+
+from ...testing_utils import (
     backend_empty_cache,
     enable_full_determinism,
     floats_tensor,
@@ -31,7 +32,6 @@ from diffusers.utils.testing_utils import (
     slow,
     torch_device,
 )
-
 from ..test_pipelines_common import PipelineTesterMixin
 
 
@@ -210,13 +210,13 @@ class KandinskyV22PipelineFastTests(PipelineTesterMixin, unittest.TestCase):
 
         expected_slice = np.array([0.3420, 0.9505, 0.3919, 1.0000, 0.5188, 0.3109, 0.6139, 0.5624, 0.6811])
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        )
 
-        assert (
-            np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        assert np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        )
 
     def test_float16_inference(self):
         super().test_float16_inference(expected_max_diff=1e-1)

@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -60,11 +60,15 @@ else:
     _import_structure["scheduling_euler_discrete"] = ["EulerDiscreteScheduler"]
     _import_structure["scheduling_flow_match_euler_discrete"] = ["FlowMatchEulerDiscreteScheduler"]
     _import_structure["scheduling_flow_match_heun_discrete"] = ["FlowMatchHeunDiscreteScheduler"]
+    _import_structure["scheduling_flow_match_lcm"] = ["FlowMatchLCMScheduler"]
+    _import_structure["scheduling_helios"] = ["HeliosScheduler"]
+    _import_structure["scheduling_helios_dmd"] = ["HeliosDMDScheduler"]
     _import_structure["scheduling_heun_discrete"] = ["HeunDiscreteScheduler"]
     _import_structure["scheduling_ipndm"] = ["IPNDMScheduler"]
     _import_structure["scheduling_k_dpm_2_ancestral_discrete"] = ["KDPM2AncestralDiscreteScheduler"]
     _import_structure["scheduling_k_dpm_2_discrete"] = ["KDPM2DiscreteScheduler"]
     _import_structure["scheduling_lcm"] = ["LCMScheduler"]
+    _import_structure["scheduling_ltx_euler_ancestral_rf"] = ["LTXEulerAncestralRFScheduler"]
     _import_structure["scheduling_pndm"] = ["PNDMScheduler"]
     _import_structure["scheduling_repaint"] = ["RePaintScheduler"]
     _import_structure["scheduling_sasolver"] = ["SASolverScheduler"]
@@ -161,11 +165,15 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
         from .scheduling_euler_discrete import EulerDiscreteScheduler
         from .scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
         from .scheduling_flow_match_heun_discrete import FlowMatchHeunDiscreteScheduler
+        from .scheduling_flow_match_lcm import FlowMatchLCMScheduler
+        from .scheduling_helios import HeliosScheduler
+        from .scheduling_helios_dmd import HeliosDMDScheduler
         from .scheduling_heun_discrete import HeunDiscreteScheduler
         from .scheduling_ipndm import IPNDMScheduler
         from .scheduling_k_dpm_2_ancestral_discrete import KDPM2AncestralDiscreteScheduler
         from .scheduling_k_dpm_2_discrete import KDPM2DiscreteScheduler
         from .scheduling_lcm import LCMScheduler
+        from .scheduling_ltx_euler_ancestral_rf import LTXEulerAncestralRFScheduler
         from .scheduling_pndm import PNDMScheduler
         from .scheduling_repaint import RePaintScheduler
         from .scheduling_sasolver import SASolverScheduler

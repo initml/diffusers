@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import inspect
-from typing import Callable, List, Optional, Union
+from typing import Callable
 
 import numpy as np
 import PIL.Image
@@ -25,7 +25,7 @@ from ...models import AutoencoderKL, UNet2DConditionModel
 from ...schedulers import DDIMScheduler, LMSDiscreteScheduler, PNDMScheduler
 from ...utils import deprecate, is_torch_xla_available, logging
 from ...utils.torch_utils import randn_tensor
-from ..pipeline_utils import DiffusionPipeline, StableDiffusionMixin
+from ..pipeline_utils import DeprecatedPipelineMixin, DiffusionPipeline, StableDiffusionMixin
 from ..stable_diffusion import StableDiffusionPipelineOutput
 from ..stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from .image_encoder import PaintByExampleImageEncoder
@@ -43,7 +43,7 @@ logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img.retrieve_latents
 def retrieve_latents(
-    encoder_output: torch.Tensor, generator: Optional[torch.Generator] = None, sample_mode: str = "sample"
+    encoder_output: torch.Tensor, generator: torch.Generator | None = None, sample_mode: str = "sample"
 ):
     if hasattr(encoder_output, "latent_dist") and sample_mode == "sample":
         return encoder_output.latent_dist.sample(generator)
@@ -65,7 +65,7 @@ def prepare_mask_and_masked_image(image, mask):
     binarized (``mask > 0.5``) and cast to ``torch.float32`` too.
 
     Args:
-        image (Union[np.array, PIL.Image, torch.Tensor]): The image to inpaint.
+        image (np.array | PIL.Image | torch.Tensor): The image to inpaint.
             It can be a ``PIL.Image``, or a ``height x width x 3`` ``np.array`` or a ``channels x height x width``
             ``torch.Tensor`` or a ``batch x channels x height x width`` ``torch.Tensor``.
         mask (_type_): The mask to apply to the image, i.e. regions to inpaint.
@@ -155,13 +155,10 @@ def prepare_mask_and_masked_image(image, mask):
     return mask, masked_image
 
 
-class PaintByExamplePipeline(DiffusionPipeline, StableDiffusionMixin):
+class PaintByExamplePipeline(DeprecatedPipelineMixin, DiffusionPipeline, StableDiffusionMixin):
+    _last_supported_version = "0.33.1"
     r"""
-    <Tip warning={true}>
-
-    🧪 This is an experimental feature!
-
-    </Tip>
+    > [!WARNING] > 🧪 This is an experimental feature!
 
     Pipeline for image-guided image inpainting using Stable Diffusion.
 
@@ -182,8 +179,8 @@ class PaintByExamplePipeline(DiffusionPipeline, StableDiffusionMixin):
             [`DDIMScheduler`], [`LMSDiscreteScheduler`], or [`PNDMScheduler`].
         safety_checker ([`StableDiffusionSafetyChecker`]):
             Classification module that estimates whether generated images could be considered offensive or harmful.
-            Please refer to the [model card](https://huggingface.co/runwayml/stable-diffusion-v1-5) for more details
-            about a model's potential harms.
+            Please refer to the [model card](https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5) for
+            more details about a model's potential harms.
         feature_extractor ([`~transformers.CLIPImageProcessor`]):
             A `CLIPImageProcessor` to extract features from generated images; used as inputs to the `safety_checker`.
 
@@ -201,7 +198,7 @@ class PaintByExamplePipeline(DiffusionPipeline, StableDiffusionMixin):
         vae: AutoencoderKL,
         image_encoder: PaintByExampleImageEncoder,
         unet: UNet2DConditionModel,
-        scheduler: Union[DDIMScheduler, PNDMScheduler, LMSDiscreteScheduler],
+        scheduler: DDIMScheduler | PNDMScheduler | LMSDiscreteScheduler,
         safety_checker: StableDiffusionSafetyChecker,
         feature_extractor: CLIPImageProcessor,
         requires_safety_checker: bool = False,
@@ -239,7 +236,7 @@ class PaintByExamplePipeline(DiffusionPipeline, StableDiffusionMixin):
     def prepare_extra_step_kwargs(self, generator, eta):
         # prepare extra kwargs for the scheduler step, since not all schedulers have the same signature
         # eta (η) is only used with the DDIMScheduler, it will be ignored for other schedulers.
-        # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
+        # eta corresponds to η in DDIM paper: https://huggingface.co/papers/2010.02502
         # and should be between [0, 1]
 
         accepts_eta = "eta" in set(inspect.signature(self.scheduler.step).parameters.keys())
@@ -273,7 +270,7 @@ class PaintByExamplePipeline(DiffusionPipeline, StableDiffusionMixin):
             and not isinstance(image, list)
         ):
             raise ValueError(
-                "`image` has to be of type `torch.Tensor` or `PIL.Image.Image` or `List[PIL.Image.Image]` but is"
+                "`image` has to be of type `torch.Tensor` or `PIL.Image.Image` or `list[PIL.Image.Image]` but is"
                 f" {type(image)}"
             )
 
@@ -400,33 +397,33 @@ class PaintByExamplePipeline(DiffusionPipeline, StableDiffusionMixin):
     @torch.no_grad()
     def __call__(
         self,
-        example_image: Union[torch.Tensor, PIL.Image.Image],
-        image: Union[torch.Tensor, PIL.Image.Image],
-        mask_image: Union[torch.Tensor, PIL.Image.Image],
-        height: Optional[int] = None,
-        width: Optional[int] = None,
+        example_image: torch.Tensor | PIL.Image.Image,
+        image: torch.Tensor | PIL.Image.Image,
+        mask_image: torch.Tensor | PIL.Image.Image,
+        height: int | None = None,
+        width: int | None = None,
         num_inference_steps: int = 50,
         guidance_scale: float = 5.0,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        num_images_per_prompt: Optional[int] = 1,
+        negative_prompt: str | list[str] | None = None,
+        num_images_per_prompt: int | None = 1,
         eta: float = 0.0,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        output_type: Optional[str] = "pil",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
-        callback: Optional[Callable[[int, int, torch.Tensor], None]] = None,
+        callback: Callable[[int, int, torch.Tensor], None] | None = None,
         callback_steps: int = 1,
     ):
         r"""
         The call function to the pipeline for generation.
 
         Args:
-            example_image (`torch.Tensor` or `PIL.Image.Image` or `List[PIL.Image.Image]`):
+            example_image (`torch.Tensor` or `PIL.Image.Image` or `list[PIL.Image.Image]`):
                 An example image to guide image generation.
-            image (`torch.Tensor` or `PIL.Image.Image` or `List[PIL.Image.Image]`):
+            image (`torch.Tensor` or `PIL.Image.Image` or `list[PIL.Image.Image]`):
                 `Image` or tensor representing an image batch to be inpainted (parts of the image are masked out with
                 `mask_image` and repainted according to `prompt`).
-            mask_image (`torch.Tensor` or `PIL.Image.Image` or `List[PIL.Image.Image]`):
+            mask_image (`torch.Tensor` or `PIL.Image.Image` or `list[PIL.Image.Image]`):
                 `Image` or tensor representing an image batch to mask `image`. White pixels in the mask are repainted,
                 while black pixels are preserved. If `mask_image` is a PIL image, it is converted to a single channel
                 (luminance) before use. If it's a tensor, it should contain one color channel (L) instead of 3, so the
@@ -441,15 +438,15 @@ class PaintByExamplePipeline(DiffusionPipeline, StableDiffusionMixin):
             guidance_scale (`float`, *optional*, defaults to 7.5):
                 A higher guidance scale value encourages the model to generate images closely linked to the text
                 `prompt` at the expense of lower image quality. Guidance scale is enabled when `guidance_scale > 1`.
-            negative_prompt (`str` or `List[str]`, *optional*):
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide what to not include in image generation. If not defined, you need to
                 pass `negative_prompt_embeds` instead. Ignored when not using guidance (`guidance_scale < 1`).
             num_images_per_prompt (`int`, *optional*, defaults to 1):
                 The number of images to generate per prompt.
             eta (`float`, *optional*, defaults to 0.0):
-                Corresponds to parameter eta (η) from the [DDIM](https://arxiv.org/abs/2010.02502) paper. Only applies
-                to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+                Corresponds to parameter eta (η) from the [DDIM](https://huggingface.co/papers/2010.02502) paper. Only
+                applies to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 A [`torch.Generator`](https://pytorch.org/docs/stable/generated/torch.Generator.html) to make
                 generation deterministic.
             latents (`torch.Tensor`, *optional*):
@@ -521,7 +518,7 @@ class PaintByExamplePipeline(DiffusionPipeline, StableDiffusionMixin):
             batch_size = image.shape[0]
         device = self._execution_device
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
-        # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
+        # of the Imagen paper: https://huggingface.co/papers/2205.11487 . `guidance_scale = 1`
         # corresponds to doing no classifier free guidance.
         do_classifier_free_guidance = guidance_scale > 1.0
 
@@ -575,7 +572,7 @@ class PaintByExamplePipeline(DiffusionPipeline, StableDiffusionMixin):
                 f"Incorrect configuration settings! The config of `pipeline.unet`: {self.unet.config} expects"
                 f" {self.unet.config.in_channels} but received `num_channels_latents`: {num_channels_latents} +"
                 f" `num_channels_mask`: {num_channels_mask} + `num_channels_masked_image`: {num_channels_masked_image}"
-                f" = {num_channels_latents+num_channels_masked_image+num_channels_mask}. Please verify the config of"
+                f" = {num_channels_latents + num_channels_masked_image + num_channels_mask}. Please verify the config of"
                 " `pipeline.unet` or your `mask_image` or `image` input."
             )
 

@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import unittest
 
 import numpy as np
 import torch
-from transformers import AutoTokenizer, T5EncoderModel
+from transformers import AutoConfig, AutoTokenizer, T5EncoderModel
 
 from diffusers import (
     AutoencoderKL,
@@ -27,7 +27,9 @@ from diffusers import (
     PixArtSigmaPipeline,
     PixArtTransformer2DModel,
 )
-from diffusers.utils.testing_utils import (
+
+from ...testing_utils import (
+    Expectations,
     backend_empty_cache,
     enable_full_determinism,
     numpy_cosine_similarity_distance,
@@ -35,7 +37,6 @@ from diffusers.utils.testing_utils import (
     slow,
     torch_device,
 )
-
 from ..pipeline_params import TEXT_TO_IMAGE_BATCH_PARAMS, TEXT_TO_IMAGE_IMAGE_PARAMS, TEXT_TO_IMAGE_PARAMS
 from ..test_pipelines_common import (
     PipelineTesterMixin,
@@ -82,7 +83,10 @@ class PixArtSigmaPipelineFastTests(PipelineTesterMixin, unittest.TestCase):
         vae = AutoencoderKL()
 
         scheduler = DDIMScheduler()
-        text_encoder = T5EncoderModel.from_pretrained("hf-internal-testing/tiny-random-t5")
+
+        torch.manual_seed(0)
+        config = AutoConfig.from_pretrained("hf-internal-testing/tiny-random-t5")
+        text_encoder = T5EncoderModel(config)
 
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-t5")
 
@@ -260,9 +264,9 @@ class PixArtSigmaPipelineFastTests(PipelineTesterMixin, unittest.TestCase):
         # TODO (sayakpaul): will refactor this once `fuse_qkv_projections()` has been added
         # to the pipeline level.
         pipe.transformer.fuse_qkv_projections()
-        assert check_qkv_fusion_processors_exist(
-            pipe.transformer
-        ), "Something wrong with the fused attention processors. Expected all the attention processors to be fused."
+        assert check_qkv_fusion_processors_exist(pipe.transformer), (
+            "Something wrong with the fused attention processors. Expected all the attention processors to be fused."
+        )
         assert check_qkv_fusion_matches_attn_procs_length(
             pipe.transformer, pipe.transformer.original_attn_processors
         ), "Something wrong with the attention processors concerning the fused QKV projections."
@@ -276,15 +280,15 @@ class PixArtSigmaPipelineFastTests(PipelineTesterMixin, unittest.TestCase):
         image = pipe(**inputs).images
         image_slice_disabled = image[0, -3:, -3:, -1]
 
-        assert np.allclose(
-            original_image_slice, image_slice_fused, atol=1e-3, rtol=1e-3
-        ), "Fusion of QKV projections shouldn't affect the outputs."
-        assert np.allclose(
-            image_slice_fused, image_slice_disabled, atol=1e-3, rtol=1e-3
-        ), "Outputs, with QKV projection fusion enabled, shouldn't change when fused QKV projections are disabled."
-        assert np.allclose(
-            original_image_slice, image_slice_disabled, atol=1e-2, rtol=1e-2
-        ), "Original outputs should match when fused QKV projections are disabled."
+        assert np.allclose(original_image_slice, image_slice_fused, atol=1e-3, rtol=1e-3), (
+            "Fusion of QKV projections shouldn't affect the outputs."
+        )
+        assert np.allclose(image_slice_fused, image_slice_disabled, atol=1e-3, rtol=1e-3), (
+            "Outputs, with QKV projection fusion enabled, shouldn't change when fused QKV projections are disabled."
+        )
+        assert np.allclose(original_image_slice, image_slice_disabled, atol=1e-2, rtol=1e-2), (
+            "Original outputs should match when fused QKV projections are disabled."
+        )
 
 
 @slow
@@ -335,7 +339,14 @@ class PixArtSigmaPipelineIntegrationTests(unittest.TestCase):
         image = pipe(prompt, generator=generator, num_inference_steps=2, output_type="np").images
 
         image_slice = image[0, -3:, -3:, -1]
-        expected_slice = np.array([0.0479, 0.0378, 0.0217, 0.0942, 0.064, 0.0791, 0.2073, 0.1975, 0.2017])
+
+        expected_slices = Expectations(
+            {
+                ("xpu", 3): np.array([0.0417, 0.0388, 0.0061, 0.0618, 0.0517, 0.0420, 0.1038, 0.1055, 0.1257]),
+                ("cuda", None): np.array([0.0479, 0.0378, 0.0217, 0.0942, 0.064, 0.0791, 0.2073, 0.1975, 0.2017]),
+            }
+        )
+        expected_slice = expected_slices.get_expectation()
 
         max_diff = numpy_cosine_similarity_distance(image_slice.flatten(), expected_slice)
         self.assertLessEqual(max_diff, 1e-4)

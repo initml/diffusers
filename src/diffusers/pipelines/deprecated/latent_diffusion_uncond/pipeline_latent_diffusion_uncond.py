@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import inspect
-from typing import List, Optional, Tuple, Union
 
 import torch
 
@@ -47,13 +46,13 @@ class LDMPipeline(DiffusionPipeline):
     def __call__(
         self,
         batch_size: int = 1,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
+        generator: torch.Generator | list[torch.Generator] | None = None,
         eta: float = 0.0,
         num_inference_steps: int = 50,
-        output_type: Optional[str] = "pil",
+        output_type: str | None = "pil",
         return_dict: bool = True,
         **kwargs,
-    ) -> Union[Tuple, ImagePipelineOutput]:
+    ) -> tuple | ImagePipelineOutput:
         r"""
         The call function to the pipeline for generation.
 

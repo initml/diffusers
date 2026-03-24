@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,29 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union, List, Dict
 
 import torch
 import torch.nn as nn
-import torch.utils.checkpoint
 
 from ...configuration_utils import ConfigMixin, register_to_config
 from ...loaders import PeftAdapterMixin, UNet2DConditionLoadersMixin
 from ...loaders.single_file_model import FromOriginalModelMixin
 from ...utils import (
-    USE_PEFT_BACKEND,
     BaseOutput,
+    apply_lora_scale,
     deprecate,
     logging,
-    scale_lora_layers,
-    unscale_lora_layers,
 )
 from ..activations import get_activation
+from ..attention import AttentionMixin
 from ..attention_processor import (
     ADDED_KV_ATTENTION_PROCESSORS,
     CROSS_ATTENTION_PROCESSORS,
     Attention,
-    AttentionProcessor,
     AttnAddedKVProcessor,
     AttnProcessor,
     FusedAttnProcessor2_0,
@@ -72,6 +69,7 @@ class UNet2DConditionOutput(BaseOutput):
 
 class UNet2DConditionModel(
     ModelMixin,
+    AttentionMixin,
     ConfigMixin,
     FromOriginalModelMixin,
     UNet2DConditionLoadersMixin,
@@ -85,7 +83,7 @@ class UNet2DConditionModel(
     for all models (such as downloading or saving).
 
     Parameters:
-        sample_size (`int` or `Tuple[int, int]`, *optional*, defaults to `None`):
+        sample_size (`int` or `tuple[int, int]`, *optional*, defaults to `None`):
             Height and width of input/output sample.
         in_channels (`int`, *optional*, defaults to 4): Number of channels in the input sample.
         out_channels (`int`, *optional*, defaults to 4): Number of channels in the output.
@@ -93,17 +91,17 @@ class UNet2DConditionModel(
         flip_sin_to_cos (`bool`, *optional*, defaults to `True`):
             Whether to flip the sin to cos in the time embedding.
         freq_shift (`int`, *optional*, defaults to 0): The frequency shift to apply to the time embedding.
-        down_block_types (`Tuple[str]`, *optional*, defaults to `("CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "DownBlock2D")`):
+        down_block_types (`tuple[str]`, *optional*, defaults to `("CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "DownBlock2D")`):
             The tuple of downsample blocks to use.
         mid_block_type (`str`, *optional*, defaults to `"UNetMidBlock2DCrossAttn"`):
             Block type for middle of UNet, it can be one of `UNetMidBlock2DCrossAttn`, `UNetMidBlock2D`, or
             `UNetMidBlock2DSimpleCrossAttn`. If `None`, the mid block layer is skipped.
-        up_block_types (`Tuple[str]`, *optional*, defaults to `("UpBlock2D", "CrossAttnUpBlock2D", "CrossAttnUpBlock2D", "CrossAttnUpBlock2D")`):
+        up_block_types (`tuple[str]`, *optional*, defaults to `("UpBlock2D", "CrossAttnUpBlock2D", "CrossAttnUpBlock2D", "CrossAttnUpBlock2D")`):
             The tuple of upsample blocks to use.
-        only_cross_attention(`bool` or `Tuple[bool]`, *optional*, default to `False`):
+        only_cross_attention(`bool` or `tuple[bool]`, *optional*, default to `False`):
             Whether to include self-attention in the basic transformer blocks, see
             [`~models.attention.BasicTransformerBlock`].
-        block_out_channels (`Tuple[int]`, *optional*, defaults to `(320, 640, 1280, 1280)`):
+        block_out_channels (`tuple[int]`, *optional*, defaults to `(320, 640, 1280, 1280)`):
             The tuple of output channels for each block.
         layers_per_block (`int`, *optional*, defaults to 2): The number of layers per block.
         downsample_padding (`int`, *optional*, defaults to 1): The padding to use for the downsampling convolution.
@@ -113,15 +111,15 @@ class UNet2DConditionModel(
         norm_num_groups (`int`, *optional*, defaults to 32): The number of groups to use for the normalization.
             If `None`, normalization and activation layers is skipped in post-processing.
         norm_eps (`float`, *optional*, defaults to 1e-5): The epsilon to use for the normalization.
-        cross_attention_dim (`int` or `Tuple[int]`, *optional*, defaults to 1280):
+        cross_attention_dim (`int` or `tuple[int]`, *optional*, defaults to 1280):
             The dimension of the cross attention features.
-        transformer_layers_per_block (`int`, `Tuple[int]`, or `Tuple[Tuple]` , *optional*, defaults to 1):
+        transformer_layers_per_block (`int`, `tuple[int]`, or `tuple[tuple]` , *optional*, defaults to 1):
             The number of transformer blocks of type [`~models.attention.BasicTransformerBlock`]. Only relevant for
             [`~models.unets.unet_2d_blocks.CrossAttnDownBlock2D`], [`~models.unets.unet_2d_blocks.CrossAttnUpBlock2D`],
             [`~models.unets.unet_2d_blocks.UNetMidBlock2DCrossAttn`].
-        reverse_transformer_layers_per_block : (`Tuple[Tuple]`, *optional*, defaults to None):
+        reverse_transformer_layers_per_block : (`tuple[tuple]`, *optional*, defaults to None):
             The number of transformer blocks of type [`~models.attention.BasicTransformerBlock`], in the upsampling
-            blocks of the U-Net. Only relevant if `transformer_layers_per_block` is of type `Tuple[Tuple]` and for
+            blocks of the U-Net. Only relevant if `transformer_layers_per_block` is of type `tuple[tuple]` and for
             [`~models.unets.unet_2d_blocks.CrossAttnDownBlock2D`], [`~models.unets.unet_2d_blocks.CrossAttnUpBlock2D`],
             [`~models.unets.unet_2d_blocks.UNetMidBlock2DCrossAttn`].
         encoder_hid_dim (`int`, *optional*, defaults to None):
@@ -171,8 +169,14 @@ class UNet2DConditionModel(
     """
 
     _supports_gradient_checkpointing = True
-    _no_split_modules = ["BasicTransformerBlock", "ResnetBlock2D", "CrossAttnUpBlock2D"]
+    _no_split_modules = [
+        "BasicTransformerBlock",
+        "ResnetBlock2D",
+        "CrossAttnUpBlock2D",
+        "UpBlock2D",
+    ]
     _skip_layerwise_casting_patterns = ["norm"]
+    _repeated_blocks = ["BasicTransformerBlock"]
 
     @register_to_config
     def __init__(
@@ -773,70 +777,6 @@ class UNet2DConditionModel(
                 feature_type=feature_type,
             )
 
-    @property
-    def attn_processors(self) -> Dict[str, AttentionProcessor]:
-        r"""
-        Returns:
-            `dict` of attention processors: A dictionary containing all attention processors used in the model with
-            indexed by its weight name.
-        """
-        # set recursively
-        processors = {}
-
-        def fn_recursive_add_processors(
-            name: str,
-            module: torch.nn.Module,
-            processors: Dict[str, AttentionProcessor],
-        ):
-            if hasattr(module, "get_processor"):
-                processors[f"{name}.processor"] = module.get_processor()
-
-            for sub_name, child in module.named_children():
-                fn_recursive_add_processors(f"{name}.{sub_name}", child, processors)
-
-            return processors
-
-        for name, module in self.named_children():
-            fn_recursive_add_processors(name, module, processors)
-
-        return processors
-
-    def set_attn_processor(
-        self, processor: Union[AttentionProcessor, Dict[str, AttentionProcessor]]
-    ):
-        r"""
-        Sets the attention processor to use to compute attention.
-
-        Parameters:
-            processor (`dict` of `AttentionProcessor` or only `AttentionProcessor`):
-                The instantiated processor class or a dictionary of processor classes that will be set as the processor
-                for **all** `Attention` layers.
-
-                If `processor` is a dict, the key needs to define the path to the corresponding cross attention
-                processor. This is strongly recommended when setting trainable attention processors.
-
-        """
-        count = len(self.attn_processors.keys())
-
-        if isinstance(processor, dict) and len(processor) != count:
-            raise ValueError(
-                f"A dict of processors was passed, but the number of processors {len(processor)} does not match the"
-                f" number of attention layers: {count}. Please make sure to pass {count} processor classes."
-            )
-
-        def fn_recursive_attn_processor(name: str, module: torch.nn.Module, processor):
-            if hasattr(module, "set_processor"):
-                if not isinstance(processor, dict):
-                    module.set_processor(processor)
-                else:
-                    module.set_processor(processor.pop(f"{name}.processor"))
-
-            for sub_name, child in module.named_children():
-                fn_recursive_attn_processor(f"{name}.{sub_name}", child, processor)
-
-        for name, module in self.named_children():
-            fn_recursive_attn_processor(name, module, processor)
-
     def set_default_attn_processor(self):
         """
         Disables custom attention processors and sets the default attention implementation.
@@ -969,11 +909,7 @@ class UNet2DConditionModel(
         Enables fused QKV projections. For self-attention modules, all projection matrices (i.e., query, key, value)
         are fused. For cross-attention modules, key and value projection matrices are fused.
 
-        <Tip warning={true}>
-
-        This API is 🧪 experimental.
-
-        </Tip>
+        > [!WARNING] > This API is 🧪 experimental.
         """
         self.original_attn_processors = None
 
@@ -994,11 +930,7 @@ class UNet2DConditionModel(
     def unfuse_qkv_projections(self):
         """Disables the fused QKV projection if enabled.
 
-        <Tip warning={true}>
-
-        This API is 🧪 experimental.
-
-        </Tip>
+        > [!WARNING] > This API is 🧪 experimental.
 
         """
         if self.original_attn_processors is not None:
@@ -1164,6 +1096,7 @@ class UNet2DConditionModel(
             encoder_hidden_states = (encoder_hidden_states, image_embeds)
         return encoder_hidden_states
 
+    @apply_lora_scale("cross_attention_kwargs")
     def forward(
         self,
         sample: torch.Tensor,
@@ -1220,18 +1153,6 @@ class UNet2DConditionModel(
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether or not to return a [`~models.unets.unet_2d_condition.UNet2DConditionOutput`] instead of a plain
                 tuple.
-            cross_attention_kwargs (`dict`, *optional*):
-                A kwargs dictionary that if specified is passed along to the [`AttnProcessor`].
-            added_cond_kwargs: (`dict`, *optional*):
-                A kwargs dictionary containin additional embeddings that if specified are added to the embeddings that
-                are passed along to the UNet blocks.
-            down_block_additional_residuals (`tuple` of `torch.Tensor`, *optional*):
-                additional residuals to be added to UNet long skip connections from down blocks to up blocks for
-                example from ControlNet side model(s)
-            mid_block_additional_residual (`torch.Tensor`, *optional*):
-                additional residual to be added to UNet mid block output, for example from ControlNet side model
-            down_intrablock_additional_residuals (`tuple` of `torch.Tensor`, *optional*):
-                additional residuals to be added within UNet down blocks, for example from T2I-Adapter side model(s)
             return_post_down_blocks (`bool`, *optional*, defaults to `False`):
                 Whether or not to return the post down blocks.
             return_post_mid_blocks (`bool`, *optional*, defaults to `False`):
@@ -1330,18 +1251,6 @@ class UNet2DConditionModel(
             }
 
         # 3. down
-        # we're popping the `scale` instead of getting it because otherwise `scale` will be propagated
-        # to the internal blocks and will raise deprecation warnings. this will be confusing for our users.
-        if cross_attention_kwargs is not None:
-            cross_attention_kwargs = cross_attention_kwargs.copy()
-            lora_scale = cross_attention_kwargs.pop("scale", 1.0)
-        else:
-            lora_scale = 1.0
-
-        if USE_PEFT_BACKEND:
-            # weight the lora layers by setting `lora_scale` for each PEFT layer
-            scale_lora_layers(self, lora_scale)
-
         is_controlnet = (
             mid_block_additional_residual is not None
             and down_block_additional_residuals is not None
@@ -1492,10 +1401,6 @@ class UNet2DConditionModel(
             sample = self.conv_norm_out(sample)
             sample = self.conv_act(sample)
         sample = self.conv_out(sample)
-
-        if USE_PEFT_BACKEND:
-            # remove `lora_scale` from each PEFT layer
-            unscale_lora_layers(self, lora_scale)
 
         if not return_dict:
             return (sample,)

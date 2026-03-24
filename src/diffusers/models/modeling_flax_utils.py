@@ -15,7 +15,7 @@
 
 import os
 from pickle import UnpicklingError
-from typing import Any, Dict, Union
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -26,11 +26,11 @@ from flax.traverse_util import flatten_dict, unflatten_dict
 from huggingface_hub import create_repo, hf_hub_download
 from huggingface_hub.utils import (
     EntryNotFoundError,
+    HfHubHTTPError,
     RepositoryNotFoundError,
     RevisionNotFoundError,
     validate_hf_hub_args,
 )
-from requests import HTTPError
 
 from .. import __version__, is_torch_available
 from ..utils import (
@@ -68,7 +68,7 @@ class FlaxModelMixin(PushToHubMixin):
         """
         return cls(config, **kwargs)
 
-    def _cast_floating_to(self, params: Union[Dict, FrozenDict], dtype: jnp.dtype, mask: Any = None) -> Any:
+    def _cast_floating_to(self, params: dict | FrozenDict, dtype: jnp.dtype, mask: Any = None) -> Any:
         """
         Helper method to cast floating-point values of given parameter `PyTree` to given `dtype`.
         """
@@ -92,7 +92,7 @@ class FlaxModelMixin(PushToHubMixin):
 
         return unflatten_dict(flat_params)
 
-    def to_bf16(self, params: Union[Dict, FrozenDict], mask: Any = None):
+    def to_bf16(self, params: dict | FrozenDict, mask: Any = None):
         r"""
         Cast the floating-point `params` to `jax.numpy.bfloat16`. This returns a new `params` tree and does not cast
         the `params` in place.
@@ -101,9 +101,9 @@ class FlaxModelMixin(PushToHubMixin):
         half-precision training or to save weights in bfloat16 for inference in order to save memory and improve speed.
 
         Arguments:
-            params (`Union[Dict, FrozenDict]`):
+            params (`dict | FrozenDict`):
                 A `PyTree` of model parameters.
-            mask (`Union[Dict, FrozenDict]`):
+            mask (`dict | FrozenDict`):
                 A `PyTree` with same structure as the `params` tree. The leaves should be booleans. It should be `True`
                 for params you want to cast, and `False` for those you want to skip.
 
@@ -113,14 +113,14 @@ class FlaxModelMixin(PushToHubMixin):
         >>> from diffusers import FlaxUNet2DConditionModel
 
         >>> # load model
-        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("runwayml/stable-diffusion-v1-5")
+        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("stable-diffusion-v1-5/stable-diffusion-v1-5")
         >>> # By default, the model parameters will be in fp32 precision, to cast these to bfloat16 precision
         >>> params = model.to_bf16(params)
         >>> # If you don't want to cast certain parameters (for example layer norm bias and scale)
         >>> # then pass the mask as follows
         >>> from flax import traverse_util
 
-        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("runwayml/stable-diffusion-v1-5")
+        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("stable-diffusion-v1-5/stable-diffusion-v1-5")
         >>> flat_params = traverse_util.flatten_dict(params)
         >>> mask = {
         ...     path: (path[-2] != ("LayerNorm", "bias") and path[-2:] != ("LayerNorm", "scale"))
@@ -131,15 +131,15 @@ class FlaxModelMixin(PushToHubMixin):
         ```"""
         return self._cast_floating_to(params, jnp.bfloat16, mask)
 
-    def to_fp32(self, params: Union[Dict, FrozenDict], mask: Any = None):
+    def to_fp32(self, params: dict | FrozenDict, mask: Any = None):
         r"""
         Cast the floating-point `params` to `jax.numpy.float32`. This method can be used to explicitly convert the
         model parameters to fp32 precision. This returns a new `params` tree and does not cast the `params` in place.
 
         Arguments:
-            params (`Union[Dict, FrozenDict]`):
+            params (`dict | FrozenDict`):
                 A `PyTree` of model parameters.
-            mask (`Union[Dict, FrozenDict]`):
+            mask (`dict | FrozenDict`):
                 A `PyTree` with same structure as the `params` tree. The leaves should be booleans. It should be `True`
                 for params you want to cast, and `False` for those you want to skip.
 
@@ -149,7 +149,7 @@ class FlaxModelMixin(PushToHubMixin):
         >>> from diffusers import FlaxUNet2DConditionModel
 
         >>> # Download model and configuration from huggingface.co
-        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("runwayml/stable-diffusion-v1-5")
+        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("stable-diffusion-v1-5/stable-diffusion-v1-5")
         >>> # By default, the model params will be in fp32, to illustrate the use of this method,
         >>> # we'll first cast to fp16 and back to fp32
         >>> params = model.to_f16(params)
@@ -158,7 +158,7 @@ class FlaxModelMixin(PushToHubMixin):
         ```"""
         return self._cast_floating_to(params, jnp.float32, mask)
 
-    def to_fp16(self, params: Union[Dict, FrozenDict], mask: Any = None):
+    def to_fp16(self, params: dict | FrozenDict, mask: Any = None):
         r"""
         Cast the floating-point `params` to `jax.numpy.float16`. This returns a new `params` tree and does not cast the
         `params` in place.
@@ -167,9 +167,9 @@ class FlaxModelMixin(PushToHubMixin):
         half-precision training or to save weights in float16 for inference in order to save memory and improve speed.
 
         Arguments:
-            params (`Union[Dict, FrozenDict]`):
+            params (`dict | FrozenDict`):
                 A `PyTree` of model parameters.
-            mask (`Union[Dict, FrozenDict]`):
+            mask (`dict | FrozenDict`):
                 A `PyTree` with same structure as the `params` tree. The leaves should be booleans. It should be `True`
                 for params you want to cast, and `False` for those you want to skip.
 
@@ -179,14 +179,14 @@ class FlaxModelMixin(PushToHubMixin):
         >>> from diffusers import FlaxUNet2DConditionModel
 
         >>> # load model
-        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("runwayml/stable-diffusion-v1-5")
+        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("stable-diffusion-v1-5/stable-diffusion-v1-5")
         >>> # By default, the model params will be in fp32, to cast these to float16
         >>> params = model.to_fp16(params)
         >>> # If you want don't want to cast certain parameters (for example layer norm bias and scale)
         >>> # then pass the mask as follows
         >>> from flax import traverse_util
 
-        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("runwayml/stable-diffusion-v1-5")
+        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("stable-diffusion-v1-5/stable-diffusion-v1-5")
         >>> flat_params = traverse_util.flatten_dict(params)
         >>> mask = {
         ...     path: (path[-2] != ("LayerNorm", "bias") and path[-2:] != ("LayerNorm", "scale"))
@@ -197,14 +197,14 @@ class FlaxModelMixin(PushToHubMixin):
         ```"""
         return self._cast_floating_to(params, jnp.float16, mask)
 
-    def init_weights(self, rng: jax.Array) -> Dict:
+    def init_weights(self, rng: jax.Array) -> dict:
         raise NotImplementedError(f"init_weights method has to be implemented for {self}")
 
     @classmethod
     @validate_hf_hub_args
     def from_pretrained(
         cls,
-        pretrained_model_name_or_path: Union[str, os.PathLike],
+        pretrained_model_name_or_path: str | os.PathLike,
         dtype: jnp.dtype = jnp.float32,
         *model_args,
         **kwargs,
@@ -216,8 +216,8 @@ class FlaxModelMixin(PushToHubMixin):
             pretrained_model_name_or_path (`str` or `os.PathLike`):
                 Can be either:
 
-                    - A string, the *model id* (for example `runwayml/stable-diffusion-v1-5`) of a pretrained model
-                      hosted on the Hub.
+                    - A string, the *model id* (for example `stable-diffusion-v1-5/stable-diffusion-v1-5`) of a
+                      pretrained model hosted on the Hub.
                     - A path to a *directory* (for example `./my_model_directory`) containing the model weights saved
                       using [`~FlaxModelMixin.save_pretrained`].
             dtype (`jax.numpy.dtype`, *optional*, defaults to `jax.numpy.float32`):
@@ -227,26 +227,20 @@ class FlaxModelMixin(PushToHubMixin):
                 This can be used to enable mixed-precision training or half-precision inference on GPUs or TPUs. If
                 specified, all the computation will be performed with the given `dtype`.
 
-                <Tip>
-
-                This only specifies the dtype of the *computation* and does not influence the dtype of model
-                parameters.
-
-                If you wish to change the dtype of the model parameters, see [`~FlaxModelMixin.to_fp16`] and
-                [`~FlaxModelMixin.to_bf16`].
-
-                </Tip>
+                > [!TIP] > This only specifies the dtype of the *computation* and does not influence the dtype of model
+                > parameters. > > If you wish to change the dtype of the model parameters, see
+                [`~FlaxModelMixin.to_fp16`] and > [`~FlaxModelMixin.to_bf16`].
 
             model_args (sequence of positional arguments, *optional*):
                 All remaining positional arguments are passed to the underlying model's `__init__` method.
-            cache_dir (`Union[str, os.PathLike]`, *optional*):
+            cache_dir (`str | os.PathLike`, *optional*):
                 Path to a directory where a downloaded pretrained model configuration is cached if the standard cache
                 is not used.
             force_download (`bool`, *optional*, defaults to `False`):
                 Whether or not to force the (re-)download of the model weights and configuration files, overriding the
                 cached versions if they exist.
 
-            proxies (`Dict[str, str]`, *optional*):
+            proxies (`dict[str, str]`, *optional*):
                 A dictionary of proxy servers to use by protocol or endpoint, for example, `{'http': 'foo.bar:3128',
                 'http://hostname': 'foo.bar:4012'}`. The proxies are used on each request.
             local_files_only(`bool`, *optional*, defaults to `False`):
@@ -277,7 +271,7 @@ class FlaxModelMixin(PushToHubMixin):
         >>> from diffusers import FlaxUNet2DConditionModel
 
         >>> # Download model and configuration from huggingface.co and cache.
-        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("runwayml/stable-diffusion-v1-5")
+        >>> model, params = FlaxUNet2DConditionModel.from_pretrained("stable-diffusion-v1-5/stable-diffusion-v1-5")
         >>> # Model was saved using *save_pretrained('./test/saved_model/')* (for example purposes, not runnable).
         >>> model, params = FlaxUNet2DConditionModel.from_pretrained("./test/saved_model/")
         ```
@@ -285,11 +279,15 @@ class FlaxModelMixin(PushToHubMixin):
         If you get the error message below, you need to finetune the weights for your downstream task:
 
         ```bash
-        Some weights of UNet2DConditionModel were not initialized from the model checkpoint at runwayml/stable-diffusion-v1-5 and are newly initialized because the shapes did not match:
+        Some weights of UNet2DConditionModel were not initialized from the model checkpoint at stable-diffusion-v1-5/stable-diffusion-v1-5 and are newly initialized because the shapes did not match:
         - conv_in.weight: found shape torch.Size([320, 4, 3, 3]) in the checkpoint and torch.Size([320, 9, 3, 3]) in the model instantiated
         You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
         ```
         """
+        logger.warning(
+            "Flax classes are deprecated and will be removed in Diffusers v1.0.0. We "
+            "recommend migrating to PyTorch classes or pinning your version of Diffusers."
+        )
         config = kwargs.pop("config", None)
         cache_dir = kwargs.pop("cache_dir", None)
         force_download = kwargs.pop("force_download", False)
@@ -369,8 +367,7 @@ class FlaxModelMixin(PushToHubMixin):
                 raise EnvironmentError(
                     f"{pretrained_model_name_or_path} is not a local folder and is not a valid model identifier "
                     "listed on 'https://huggingface.co/models'\nIf this is a private repository, make sure to pass a "
-                    "token having permission to this repo with `token` or log in with `huggingface-cli "
-                    "login`."
+                    "token having permission to this repo with `token` or log in with `hf auth login`."
                 )
             except RevisionNotFoundError:
                 raise EnvironmentError(
@@ -382,7 +379,7 @@ class FlaxModelMixin(PushToHubMixin):
                 raise EnvironmentError(
                     f"{pretrained_model_name_or_path} does not appear to have a file named {FLAX_WEIGHTS_NAME}."
                 )
-            except HTTPError as err:
+            except HfHubHTTPError as err:
                 raise EnvironmentError(
                     f"There was a specific connection error when trying to load {pretrained_model_name_or_path}:\n"
                     f"{err}"
@@ -496,8 +493,8 @@ class FlaxModelMixin(PushToHubMixin):
 
     def save_pretrained(
         self,
-        save_directory: Union[str, os.PathLike],
-        params: Union[Dict, FrozenDict],
+        save_directory: str | os.PathLike,
+        params: dict | FrozenDict,
         is_main_process: bool = True,
         push_to_hub: bool = False,
         **kwargs,
@@ -509,7 +506,7 @@ class FlaxModelMixin(PushToHubMixin):
         Arguments:
             save_directory (`str` or `os.PathLike`):
                 Directory to save a model and its configuration file to. Will be created if it doesn't exist.
-            params (`Union[Dict, FrozenDict]`):
+            params (`dict | FrozenDict`):
                 A `PyTree` of model parameters.
             is_main_process (`bool`, *optional*, defaults to `True`):
                 Whether the process calling this is the main process or not. Useful during distributed training and you
@@ -519,7 +516,7 @@ class FlaxModelMixin(PushToHubMixin):
                 Whether or not to push your model to the Hugging Face model hub after saving it. You can specify the
                 repository you want to push to with `repo_id` (will default to the name of `save_directory` in your
                 namespace).
-            kwargs (`Dict[str, Any]`, *optional*):
+            kwargs (`dict[str, Any]`, *optional*):
                 Additional key word arguments passed along to the [`~utils.PushToHubMixin.push_to_hub`] method.
         """
         if os.path.isfile(save_directory):

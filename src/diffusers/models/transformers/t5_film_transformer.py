@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import Optional, Tuple
 
 import torch
 from torch import nn
@@ -196,12 +195,12 @@ class DecoderLayer(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        conditioning_emb: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
-        encoder_attention_mask: Optional[torch.Tensor] = None,
+        conditioning_emb: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        encoder_hidden_states: torch.Tensor | None = None,
+        encoder_attention_mask: torch.Tensor | None = None,
         encoder_decoder_position_bias=None,
-    ) -> Tuple[torch.Tensor]:
+    ) -> tuple[torch.Tensor]:
         hidden_states = self.layer[0](
             hidden_states,
             conditioning_emb=conditioning_emb,
@@ -250,8 +249,8 @@ class T5LayerSelfAttentionCond(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        conditioning_emb: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        conditioning_emb: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # pre_self_attention_layer_norm
         normed_hidden_states = self.layer_norm(hidden_states)
@@ -293,8 +292,8 @@ class T5LayerCrossAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        key_value_states: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
+        key_value_states: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         normed_hidden_states = self.layer_norm(hidden_states)
         attention_output = self.attention(
@@ -328,7 +327,7 @@ class T5LayerFFCond(nn.Module):
         self.layer_norm = T5LayerNorm(d_model, eps=layer_norm_epsilon)
         self.dropout = nn.Dropout(dropout_rate)
 
-    def forward(self, hidden_states: torch.Tensor, conditioning_emb: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, hidden_states: torch.Tensor, conditioning_emb: torch.Tensor | None = None) -> torch.Tensor:
         forwarded_states = self.layer_norm(hidden_states)
         if conditioning_emb is not None:
             forwarded_states = self.film(forwarded_states, conditioning_emb)
@@ -390,7 +389,7 @@ class T5LayerNorm(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         # T5 uses a layer_norm which only scales and doesn't shift, which is also known as Root Mean
-        # Square Layer Normalization https://arxiv.org/abs/1910.07467 thus variance is calculated
+        # Square Layer Normalization https://huggingface.co/papers/1910.07467 thus variance is calculated
         # w/o mean and there is no bias. Additionally we want to make sure that the accumulation for
         # half-precision inputs is done in fp32
 
@@ -407,7 +406,7 @@ class T5LayerNorm(nn.Module):
 class NewGELUActivation(nn.Module):
     """
     Implementation of the GELU activation function currently in Google BERT repo (identical to OpenAI GPT). Also see
-    the Gaussian Error Linear Units paper: https://arxiv.org/abs/1606.08415
+    the Gaussian Error Linear Units paper: https://huggingface.co/papers/1606.08415
     """
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:

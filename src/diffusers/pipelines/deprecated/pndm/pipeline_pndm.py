@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from typing import List, Optional, Tuple, Union
 
 import torch
 
@@ -52,11 +50,11 @@ class PNDMPipeline(DiffusionPipeline):
         self,
         batch_size: int = 1,
         num_inference_steps: int = 50,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        output_type: Optional[str] = "pil",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
         **kwargs,
-    ) -> Union[ImagePipelineOutput, Tuple]:
+    ) -> ImagePipelineOutput | tuple:
         r"""
         The call function to the pipeline for generation.
 
@@ -95,7 +93,7 @@ class PNDMPipeline(DiffusionPipeline):
                 returned where the first element is a list with the generated images.
         """
         # For more information on the sampling method you can take a look at Algorithm 2 of
-        # the official paper: https://arxiv.org/pdf/2202.09778.pdf
+        # the official paper: https://huggingface.co/papers/2202.09778
 
         # Sample gaussian noise to begin loop
         image = randn_tensor(

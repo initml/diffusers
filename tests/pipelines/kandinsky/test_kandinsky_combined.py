@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,10 +16,12 @@
 import unittest
 
 import numpy as np
+import pytest
 
 from diffusers import KandinskyCombinedPipeline, KandinskyImg2ImgCombinedPipeline, KandinskyInpaintCombinedPipeline
-from diffusers.utils.testing_utils import enable_full_determinism, require_torch_accelerator, torch_device
+from diffusers.utils import is_transformers_version
 
+from ...testing_utils import enable_full_determinism, require_torch_accelerator, torch_device
 from ..test_pipelines_common import PipelineTesterMixin
 from .test_kandinsky import Dummies
 from .test_kandinsky_img2img import Dummies as Img2ImgDummies
@@ -32,9 +34,7 @@ enable_full_determinism()
 
 class KandinskyPipelineCombinedFastTests(PipelineTesterMixin, unittest.TestCase):
     pipeline_class = KandinskyCombinedPipeline
-    params = [
-        "prompt",
-    ]
+    params = ["prompt"]
     batch_params = ["prompt", "negative_prompt"]
     required_optional_params = [
         "generator",
@@ -73,6 +73,11 @@ class KandinskyPipelineCombinedFastTests(PipelineTesterMixin, unittest.TestCase)
         )
         return inputs
 
+    @pytest.mark.xfail(
+        condition=is_transformers_version(">=", "4.56.2"),
+        reason="Latest transformers changes the slices",
+        strict=False,
+    )
     def test_kandinsky(self):
         device = "cpu"
 
@@ -98,12 +103,12 @@ class KandinskyPipelineCombinedFastTests(PipelineTesterMixin, unittest.TestCase)
 
         expected_slice = np.array([0.2893, 0.1464, 0.4603, 0.3529, 0.4612, 0.7701, 0.4027, 0.3051, 0.5155])
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
-        assert (
-            np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        )
+        assert np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        )
 
     @require_torch_accelerator
     def test_offloads(self):
@@ -140,6 +145,10 @@ class KandinskyPipelineCombinedFastTests(PipelineTesterMixin, unittest.TestCase)
 
     def test_dict_tuple_outputs_equivalent(self):
         super().test_dict_tuple_outputs_equivalent(expected_max_difference=5e-4)
+
+    @unittest.skip("Test not supported.")
+    def test_pipeline_with_accelerator_device_map(self):
+        pass
 
 
 class KandinskyPipelineImg2ImgCombinedFastTests(PipelineTesterMixin, unittest.TestCase):
@@ -181,6 +190,11 @@ class KandinskyPipelineImg2ImgCombinedFastTests(PipelineTesterMixin, unittest.Te
         inputs.pop("negative_image_embeds")
         return inputs
 
+    @pytest.mark.xfail(
+        condition=is_transformers_version(">=", "4.56.2"),
+        reason="Latest transformers changes the slices",
+        strict=False,
+    )
     def test_kandinsky(self):
         device = "cpu"
 
@@ -206,12 +220,12 @@ class KandinskyPipelineImg2ImgCombinedFastTests(PipelineTesterMixin, unittest.Te
 
         expected_slice = np.array([0.4852, 0.4136, 0.4539, 0.4781, 0.4680, 0.5217, 0.4973, 0.4089, 0.4977])
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
-        assert (
-            np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        )
+        assert np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        )
 
     @require_torch_accelerator
     def test_offloads(self):
@@ -251,6 +265,10 @@ class KandinskyPipelineImg2ImgCombinedFastTests(PipelineTesterMixin, unittest.Te
 
     def test_save_load_optional_components(self):
         super().test_save_load_optional_components(expected_max_difference=5e-4)
+
+    @unittest.skip("Test not supported.")
+    def test_pipeline_with_accelerator_device_map(self):
+        pass
 
 
 class KandinskyPipelineInpaintCombinedFastTests(PipelineTesterMixin, unittest.TestCase):
@@ -292,6 +310,11 @@ class KandinskyPipelineInpaintCombinedFastTests(PipelineTesterMixin, unittest.Te
         inputs.pop("negative_image_embeds")
         return inputs
 
+    @pytest.mark.xfail(
+        condition=is_transformers_version(">=", "4.56.2"),
+        reason="Latest transformers changes the slices",
+        strict=False,
+    )
     def test_kandinsky(self):
         device = "cpu"
 
@@ -318,12 +341,12 @@ class KandinskyPipelineInpaintCombinedFastTests(PipelineTesterMixin, unittest.Te
 
         expected_slice = np.array([0.0320, 0.0860, 0.4013, 0.0518, 0.2484, 0.5847, 0.4411, 0.2321, 0.4593])
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
-        assert (
-            np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        )
+        assert np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        )
 
     @require_torch_accelerator
     def test_offloads(self):
@@ -367,3 +390,7 @@ class KandinskyPipelineInpaintCombinedFastTests(PipelineTesterMixin, unittest.Te
 
     def test_save_load_local(self):
         super().test_save_load_local(expected_max_difference=5e-3)
+
+    @unittest.skip("Test not supported.")
+    def test_pipeline_with_accelerator_device_map(self):
+        pass

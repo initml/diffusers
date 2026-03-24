@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -56,12 +55,12 @@ class UNet1DModel(ModelMixin, ConfigMixin):
         freq_shift (`float`, *optional*, defaults to 0.0): Frequency shift for Fourier time embedding.
         flip_sin_to_cos (`bool`, *optional*, defaults to `False`):
             Whether to flip sin to cos for Fourier time embedding.
-        down_block_types (`Tuple[str]`, *optional*, defaults to `("DownBlock1DNoSkip", "DownBlock1D", "AttnDownBlock1D")`):
-            Tuple of downsample block types.
-        up_block_types (`Tuple[str]`, *optional*, defaults to `("AttnUpBlock1D", "UpBlock1D", "UpBlock1DNoSkip")`):
-            Tuple of upsample block types.
-        block_out_channels (`Tuple[int]`, *optional*, defaults to `(32, 32, 64)`):
-            Tuple of block output channels.
+        down_block_types (`tuple[str]`, *optional*, defaults to `("DownBlock1DNoSkip", "DownBlock1D", "AttnDownBlock1D")`):
+            tuple of downsample block types.
+        up_block_types (`tuple[str]`, *optional*, defaults to `("AttnUpBlock1D", "UpBlock1D", "UpBlock1DNoSkip")`):
+            tuple of upsample block types.
+        block_out_channels (`tuple[int]`, *optional*, defaults to `(32, 32, 64)`):
+            tuple of block output channels.
         mid_block_type (`str`, *optional*, defaults to `"UNetMidBlock1D"`): Block type for middle of UNet.
         out_block_type (`str`, *optional*, defaults to `None`): Optional output processing block of UNet.
         act_fn (`str`, *optional*, defaults to `None`): Optional activation function in UNet blocks.
@@ -77,19 +76,20 @@ class UNet1DModel(ModelMixin, ConfigMixin):
     def __init__(
         self,
         sample_size: int = 65536,
-        sample_rate: Optional[int] = None,
+        sample_rate: int | None = None,
         in_channels: int = 2,
         out_channels: int = 2,
         extra_in_channels: int = 0,
         time_embedding_type: str = "fourier",
+        time_embedding_dim: int | None = None,
         flip_sin_to_cos: bool = True,
         use_timestep_embedding: bool = False,
         freq_shift: float = 0.0,
-        down_block_types: Tuple[str] = ("DownBlock1DNoSkip", "DownBlock1D", "AttnDownBlock1D"),
-        up_block_types: Tuple[str] = ("AttnUpBlock1D", "UpBlock1D", "UpBlock1DNoSkip"),
-        mid_block_type: Tuple[str] = "UNetMidBlock1D",
+        down_block_types: tuple[str, ...] = ("DownBlock1DNoSkip", "DownBlock1D", "AttnDownBlock1D"),
+        up_block_types: tuple[str, ...] = ("AttnUpBlock1D", "UpBlock1D", "UpBlock1DNoSkip"),
+        mid_block_type: str = "UNetMidBlock1D",
         out_block_type: str = None,
-        block_out_channels: Tuple[int] = (32, 32, 64),
+        block_out_channels: tuple[int, ...] = (32, 32, 64),
         act_fn: str = None,
         norm_num_groups: int = 8,
         layers_per_block: int = 1,
@@ -100,15 +100,23 @@ class UNet1DModel(ModelMixin, ConfigMixin):
 
         # time
         if time_embedding_type == "fourier":
+            time_embed_dim = time_embedding_dim or block_out_channels[0] * 2
+            if time_embed_dim % 2 != 0:
+                raise ValueError(f"`time_embed_dim` should be divisible by 2, but is {time_embed_dim}.")
             self.time_proj = GaussianFourierProjection(
-                embedding_size=8, set_W_to_weight=False, log=False, flip_sin_to_cos=flip_sin_to_cos
+                embedding_size=time_embed_dim // 2, set_W_to_weight=False, log=False, flip_sin_to_cos=flip_sin_to_cos
             )
-            timestep_input_dim = 2 * block_out_channels[0]
+            timestep_input_dim = time_embed_dim
         elif time_embedding_type == "positional":
+            time_embed_dim = time_embedding_dim or block_out_channels[0] * 4
             self.time_proj = Timesteps(
                 block_out_channels[0], flip_sin_to_cos=flip_sin_to_cos, downscale_freq_shift=freq_shift
             )
             timestep_input_dim = block_out_channels[0]
+        else:
+            raise ValueError(
+                f"{time_embedding_type} does not exist. Please make sure to use one of `fourier` or `positional`."
+            )
 
         if use_timestep_embedding:
             time_embed_dim = block_out_channels[0] * 4
@@ -197,9 +205,9 @@ class UNet1DModel(ModelMixin, ConfigMixin):
     def forward(
         self,
         sample: torch.Tensor,
-        timestep: Union[torch.Tensor, float, int],
+        timestep: torch.Tensor | float | int,
         return_dict: bool = True,
-    ) -> Union[UNet1DOutput, Tuple]:
+    ) -> UNet1DOutput | tuple:
         r"""
         The [`UNet1DModel`] forward method.
 

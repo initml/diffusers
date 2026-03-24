@@ -19,10 +19,12 @@ import inspect
 import os
 import re
 import sys
+import types
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union, get_args, get_origin
+from typing import Any, Callable, Dict, List, Union, get_args, get_origin, get_type_hints
 
+import httpx
 import numpy as np
 import PIL.Image
 import requests
@@ -36,9 +38,8 @@ from huggingface_hub import (
     read_dduf_file,
     snapshot_download,
 )
-from huggingface_hub.utils import OfflineModeIsEnabled, validate_hf_hub_args
+from huggingface_hub.utils import HfHubHTTPError, OfflineModeIsEnabled, validate_hf_hub_args
 from packaging import version
-from requests.exceptions import HTTPError
 from tqdm.auto import tqdm
 from typing_extensions import Self
 
@@ -47,6 +48,7 @@ from ..configuration_utils import ConfigMixin
 from ..models import AutoencoderKL
 from ..models.attention_processor import FusedAttnProcessor2_0
 from ..models.modeling_utils import _LOW_CPU_MEM_USAGE_DEFAULT, ModelMixin
+from ..quantizers import PipelineQuantizationConfig
 from ..quantizers.bitsandbytes.utils import _check_bnb_status
 from ..schedulers.scheduling_utils import SCHEDULER_CONFIG_NAME
 from ..utils import (
@@ -56,16 +58,20 @@ from ..utils import (
     PushToHubMixin,
     _get_detailed_type,
     _is_valid_type,
+    deprecate,
     is_accelerate_available,
     is_accelerate_version,
+    is_bitsandbytes_version,
+    is_hpu_available,
     is_torch_npu_available,
     is_torch_version,
     is_transformers_version,
     logging,
     numpy_to_pil,
 )
+from ..utils.distributed_utils import is_torch_dist_rank_zero
 from ..utils.hub_utils import _check_legacy_sharding_variant_format, load_or_create_model_card, populate_model_card
-from ..utils.torch_utils import is_compiled_module
+from ..utils.torch_utils import empty_device_cache, get_device, is_compiled_module
 
 
 if is_torch_npu_available():
@@ -86,6 +92,7 @@ from .pipeline_loading_utils import (
     _identify_model_variants,
     _maybe_raise_error_for_incorrect_transformers,
     _maybe_raise_warning_for_inpainting,
+    _maybe_warn_for_wrong_component_in_quant_config,
     _resolve_custom_pipeline_and_cls,
     _unwrap_model,
     _update_init_kwargs_with_connected_pipeline,
@@ -105,7 +112,7 @@ LIBRARIES = []
 for library in LOADABLE_CLASSES:
     LIBRARIES.append(library)
 
-SUPPORTED_DEVICE_MAP = ["balanced"]
+SUPPORTED_DEVICE_MAP = ["balanced"] + [get_device(), "cpu"]
 
 logger = logging.get_logger(__name__)
 
@@ -121,7 +128,7 @@ class ImagePipelineOutput(BaseOutput):
             num_channels)`.
     """
 
-    images: Union[List[PIL.Image.Image], np.ndarray]
+    images: list[PIL.Image.Image] | np.ndarray
 
 
 @dataclass
@@ -135,6 +142,43 @@ class AudioPipelineOutput(BaseOutput):
     """
 
     audios: np.ndarray
+
+
+class DeprecatedPipelineMixin:
+    """
+    A mixin that can be used to mark a pipeline as deprecated.
+
+    Pipelines inheriting from this mixin will raise a warning when instantiated, indicating that they are deprecated
+    and won't receive updates past the specified version. Tests will be skipped for pipelines that inherit from this
+    mixin.
+
+    Example usage:
+    ```python
+    class MyDeprecatedPipeline(DeprecatedPipelineMixin, DiffusionPipeline):
+        _last_supported_version = "0.20.0"
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+    ```
+    """
+
+    # Override this in the inheriting class to specify the last version that will support this pipeline
+    _last_supported_version = None
+
+    def __init__(self, *args, **kwargs):
+        # Get the class name for the warning message
+        class_name = self.__class__.__name__
+
+        # Get the last supported version or use the current version if not specified
+        version_info = getattr(self.__class__, "_last_supported_version", __version__)
+
+        # Raise a warning that this pipeline is deprecated
+        logger.warning(
+            f"The {class_name} has been deprecated and will not receive bug fixes or feature updates after Diffusers version {version_info}. "
+        )
+
+        # Call the parent class's __init__ method
+        super().__init__(*args, **kwargs)
 
 
 class DiffusionPipeline(ConfigMixin, PushToHubMixin):
@@ -195,10 +239,10 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
 
     def save_pretrained(
         self,
-        save_directory: Union[str, os.PathLike],
+        save_directory: str | os.PathLike,
         safe_serialization: bool = True,
-        variant: Optional[str] = None,
-        max_shard_size: Optional[Union[int, str]] = None,
+        variant: str | None = None,
+        max_shard_size: int | str | None = None,
         push_to_hub: bool = False,
         **kwargs,
     ):
@@ -297,6 +341,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
             save_method_accept_safe = "safe_serialization" in save_method_signature.parameters
             save_method_accept_variant = "variant" in save_method_signature.parameters
             save_method_accept_max_shard_size = "max_shard_size" in save_method_signature.parameters
+            save_method_accept_peft_format = "save_peft_format" in save_method_signature.parameters
 
             save_kwargs = {}
             if save_method_accept_safe:
@@ -306,6 +351,11 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
             if save_method_accept_max_shard_size and max_shard_size is not None:
                 # max_shard_size is expected to not be None in ModelMixin
                 save_kwargs["max_shard_size"] = max_shard_size
+            if save_method_accept_peft_format:
+                # Set save_peft_format=False for transformers>=5.0.0 compatibility
+                # In transformers 5.0.0+, the default save_peft_format=True adds "base_model.model" prefix
+                # to adapter keys, but from_pretrained expects keys without this prefix
+                save_kwargs["save_peft_format"] = False
 
             save_method(os.path.join(save_directory, pipeline_component_name), **save_kwargs)
 
@@ -331,12 +381,8 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         Performs Pipeline dtype and/or device conversion. A torch.dtype and torch.device are inferred from the
         arguments of `self.to(*args, **kwargs).`
 
-        <Tip>
-
-            If the pipeline already has the correct torch.dtype and torch.device, then it is returned as is. Otherwise,
-            the returned pipeline is a copy of self with the desired torch.dtype and torch.device.
-
-        </Tip>
+        > [!TIP] > If the pipeline already has the correct torch.dtype and torch.device, then it is returned as is.
+        Otherwise, > the returned pipeline is a copy of self with the desired torch.dtype and torch.device.
 
 
         Here are the ways to call `to`:
@@ -404,6 +450,14 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
             if not is_accelerate_available() or is_accelerate_version("<", "0.14.0"):
                 return False
 
+            _, _, is_loaded_in_8bit_bnb = _check_bnb_status(module)
+
+            # https://github.com/huggingface/accelerate/pull/3907
+            if is_loaded_in_8bit_bnb and (
+                is_bitsandbytes_version("<", "0.48.0") or is_accelerate_version("<", "1.13.0.dev0")
+            ):
+                return False
+
             return hasattr(module, "_hf_hook") and (
                 isinstance(module._hf_hook, accelerate.hooks.AlignDevicesHook)
                 or hasattr(module._hf_hook, "hooks")
@@ -420,8 +474,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         pipeline_is_sequentially_offloaded = any(
             module_is_sequentially_offloaded(module) for _, module in self.components.items()
         )
-
-        is_pipeline_device_mapped = self.hf_device_map is not None and len(self.hf_device_map) > 1
+        is_pipeline_device_mapped = self._is_pipeline_device_mapped()
         if is_pipeline_device_mapped:
             raise ValueError(
                 "It seems like you have activated a device mapping strategy on the pipeline which doesn't allow explicit device placement using `to()`. You can call `reset_device_map()` to remove the existing device map from the pipeline."
@@ -445,6 +498,27 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                 f"It seems like you have activated model offloading by calling `enable_model_cpu_offload`, but are now manually moving the pipeline to GPU. It is strongly recommended against doing so as memory gains from offloading are likely to be lost. Offloading automatically takes care of moving the individual components {', '.join(self.components.keys())} to GPU when needed. To make sure offloading works as expected, you should consider moving the pipeline back to CPU: `pipeline.to('cpu')` or removing the move altogether if you use offloading."
             )
 
+        # Enable generic support for Intel Gaudi accelerator using GPU/HPU migration
+        if device_type == "hpu" and kwargs.pop("hpu_migration", True) and is_hpu_available():
+            os.environ["PT_HPU_GPU_MIGRATION"] = "1"
+            logger.debug("Environment variable set: PT_HPU_GPU_MIGRATION=1")
+
+            import habana_frameworks.torch  # noqa: F401
+
+            # HPU hardware check
+            if not (hasattr(torch, "hpu") and torch.hpu.is_available()):
+                raise ValueError("You are trying to call `.to('hpu')` but HPU device is unavailable.")
+
+            os.environ["PT_HPU_MAX_COMPOUND_OP_SIZE"] = "1"
+            logger.debug("Environment variable set: PT_HPU_MAX_COMPOUND_OP_SIZE=1")
+
+            if dtype in (torch.bfloat16, None) and kwargs.pop("sdp_on_bf16", True):
+                if hasattr(torch._C, "_set_math_sdp_allow_fp16_bf16_reduction"):
+                    torch._C._set_math_sdp_allow_fp16_bf16_reduction(True)
+                    logger.warning(
+                        "Enabled SDP with BF16 precision on HPU. To disable, please use `.to('hpu', sdp_on_bf16=False)`"
+                    )
+
         module_names, _ = self._get_signature_keys(self)
         modules = [getattr(self, n, None) for n in module_names]
         modules = [m for m in modules if isinstance(m, torch.nn.Module)]
@@ -459,9 +533,10 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                     f"The module '{module.__class__.__name__}' has been loaded in `bitsandbytes` {'4bit' if is_loaded_in_4bit_bnb else '8bit'} and conversion to {dtype} is not supported. Module is still in {'4bit' if is_loaded_in_4bit_bnb else '8bit'} precision."
                 )
 
-            if is_loaded_in_8bit_bnb and device is not None:
+            if is_loaded_in_8bit_bnb and device is not None and is_bitsandbytes_version("<", "0.48.0"):
                 logger.warning(
                     f"The module '{module.__class__.__name__}' has been loaded in `bitsandbytes` 8bit and moving it to {device} via `.to()` is not supported. Module is still on {module.device}."
+                    "You need to upgrade bitsandbytes to at least 0.48.0"
                 )
 
             # Note: we also handle this at the ModelMixin level. The reason for doing it here too is that modeling
@@ -477,6 +552,14 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
             # This can happen for `transformer` models. CPU placement was added in
             # https://github.com/huggingface/transformers/pull/33122. So, we guard this accordingly.
             if is_loaded_in_4bit_bnb and device is not None and is_transformers_version(">", "4.44.0"):
+                module.to(device=device)
+            # added here https://github.com/huggingface/transformers/pull/43258
+            if (
+                is_loaded_in_8bit_bnb
+                and device is not None
+                and is_transformers_version(">", "4.58.0")
+                and is_bitsandbytes_version(">=", "0.48.0")
+            ):
                 module.to(device=device)
             elif not is_loaded_in_4bit_bnb and not is_loaded_in_8bit_bnb and not is_group_offloaded:
                 module.to(device, dtype)
@@ -528,7 +611,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
 
     @classmethod
     @validate_hf_hub_args
-    def from_pretrained(cls, pretrained_model_name_or_path: Optional[Union[str, os.PathLike]], **kwargs) -> Self:
+    def from_pretrained(cls, pretrained_model_name_or_path: str | os.PathLike, **kwargs) -> Self:
         r"""
         Instantiate a PyTorch diffusion pipeline from pretrained pipeline weights.
 
@@ -552,19 +635,15 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                       saved using
                     [`~DiffusionPipeline.save_pretrained`].
                     - A path to a *directory* (for example `./my_pipeline_directory/`) containing a dduf file
-            torch_dtype (`str` or `torch.dtype` or `dict[str, Union[str, torch.dtype]]`, *optional*):
-                Override the default `torch.dtype` and load the model with another dtype. If "auto" is passed, the
-                dtype is automatically derived from the model's weights. To load submodels with different dtype pass a
-                `dict` (for example `{'transformer': torch.bfloat16, 'vae': torch.float16}`). Set the default dtype for
-                unspecified components with `default` (for example `{'transformer': torch.bfloat16, 'default':
-                torch.float16}`). If a component is not specified and no default is set, `torch.float32` is used.
+            torch_dtype (`torch.dtype` or `dict[str, Union[str, torch.dtype]]`, *optional*):
+                Override the default `torch.dtype` and load the model with another dtype. To load submodels with
+                different dtype pass a `dict` (for example `{'transformer': torch.bfloat16, 'vae': torch.float16}`).
+                Set the default dtype for unspecified components with `default` (for example `{'transformer':
+                torch.bfloat16, 'default': torch.float16}`). If a component is not specified and no default is set,
+                `torch.float32` is used.
             custom_pipeline (`str`, *optional*):
 
-                <Tip warning={true}>
-
-                🧪 This is an experimental feature and may change in the future.
-
-                </Tip>
+                > [!WARNING] > 🧪 This is an experimental feature and may change in the future.
 
                 Can be either:
 
@@ -611,14 +690,11 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                 Mirror source to resolve accessibility issues if you’re downloading a model in China. We do not
                 guarantee the timeliness or safety of the source, and you should refer to the mirror site for more
                 information.
-            device_map (`str` or `Dict[str, Union[int, str, torch.device]]`, *optional*):
-                A map that specifies where each submodule should go. It doesn’t need to be defined for each
-                parameter/buffer name; once a given module name is inside, every submodule of it will be sent to the
-                same device.
-
-                Set `device_map="auto"` to have 🤗 Accelerate automatically compute the most optimized `device_map`. For
-                more information about each option see [designing a device
-                map](https://hf.co/docs/accelerate/main/en/usage_guides/big_modeling#designing-a-device-map).
+            device_map (`str`, *optional*):
+                Strategy that dictates how the different components of a pipeline should be placed on available
+                devices. Currently, only "balanced" `device_map` is supported. Check out
+                [this](https://huggingface.co/docs/diffusers/main/en/tutorials/inference_with_big_models#device-placement)
+                to know more.
             max_memory (`Dict`, *optional*):
                 A dictionary device identifier for the maximum memory. Will default to the maximum memory available for
                 each GPU and the available CPU RAM if unset.
@@ -651,13 +727,12 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                 loading `from_flax`.
             dduf_file(`str`, *optional*):
                 Load weights from the specified dduf file.
+            disable_mmap ('bool', *optional*, defaults to 'False'):
+                Whether to disable mmap when loading a Safetensors model. This option can perform better when the model
+                is on a network mount or hard drive, which may not handle the seeky-ness of mmap very well.
 
-        <Tip>
-
-        To use private or [gated](https://huggingface.co/docs/hub/models-gated#gated-models) models, log-in with
-        `huggingface-cli login`.
-
-        </Tip>
+        > [!TIP] > To use private or [gated](https://huggingface.co/docs/hub/models-gated#gated-models) models, log-in
+        with `hf > auth login`.
 
         Examples:
 
@@ -705,6 +780,8 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         use_safetensors = kwargs.pop("use_safetensors", None)
         use_onnx = kwargs.pop("use_onnx", None)
         load_connected_pipeline = kwargs.pop("load_connected_pipeline", False)
+        quantization_config = kwargs.pop("quantization_config", None)
+        disable_mmap = kwargs.pop("disable_mmap", False)
 
         if torch_dtype is not None and not isinstance(torch_dtype, dict) and not isinstance(torch_dtype, torch.dtype):
             torch_dtype = torch.float32
@@ -720,6 +797,9 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                 " `accelerate` for faster and less memory-intense model loading. You can do so with: \n```\npip"
                 " install accelerate\n```\n."
             )
+
+        if quantization_config is not None and not isinstance(quantization_config, PipelineQuantizationConfig):
+            raise ValueError("`quantization_config` must be an instance of `PipelineQuantizationConfig`.")
 
         if low_cpu_mem_usage is True and not is_torch_version(">=", "1.9.0"):
             raise NotImplementedError(
@@ -925,14 +1005,22 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
 
         # 7. Load each module in the pipeline
         current_device_map = None
-        for name, (library_name, class_name) in logging.tqdm(init_dict.items(), desc="Loading pipeline components..."):
+        _maybe_warn_for_wrong_component_in_quant_config(init_dict, quantization_config)
+        logging_tqdm_kwargs = {"desc": "Loading pipeline components..."}
+        if not is_torch_dist_rank_zero():
+            logging_tqdm_kwargs["disable"] = True
+
+        for name, (library_name, class_name) in logging.tqdm(init_dict.items(), **logging_tqdm_kwargs):
             # 7.1 device_map shenanigans
-            if final_device_map is not None and len(final_device_map) > 0:
-                component_device = final_device_map.get(name, None)
-                if component_device is not None:
-                    current_device_map = {"": component_device}
-                else:
-                    current_device_map = None
+            if final_device_map is not None:
+                if isinstance(final_device_map, dict) and len(final_device_map) > 0:
+                    component_device = final_device_map.get(name, None)
+                    if component_device is not None:
+                        current_device_map = {"": component_device}
+                    else:
+                        current_device_map = None
+                elif isinstance(final_device_map, str):
+                    current_device_map = final_device_map
 
             # 7.2 - now that JAX/Flax is an official framework of the library, we might load from Flax names
             class_name = class_name[4:] if class_name.startswith("Flax") else class_name
@@ -981,6 +1069,8 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                     use_safetensors=use_safetensors,
                     dduf_entries=dduf_entries,
                     provider_options=provider_options,
+                    disable_mmap=disable_mmap,
+                    quantization_config=quantization_config,
                 )
                 logger.info(
                     f"Loaded {name} as {class_name} from `{name}` subfolder of {pretrained_model_name_or_path}."
@@ -1034,6 +1124,8 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         model.register_to_config(_name_or_path=pretrained_model_name_or_path)
         if device_map is not None:
             setattr(model, "hf_device_map", final_device_map)
+        if quantization_config is not None:
+            setattr(model, "quantization_config", quantization_config)
         return model
 
     @property
@@ -1084,23 +1176,24 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                 accelerate.hooks.remove_hook_from_module(model, recurse=True)
         self._all_hooks = []
 
-    def enable_model_cpu_offload(self, gpu_id: Optional[int] = None, device: Union[torch.device, str] = "cuda"):
+    def enable_model_cpu_offload(self, gpu_id: int | None = None, device: torch.device | str = None):
         r"""
         Offloads all models to CPU using accelerate, reducing memory usage with a low impact on performance. Compared
-        to `enable_sequential_cpu_offload`, this method moves one whole model at a time to the GPU when its `forward`
-        method is called, and the model remains in GPU until the next model runs. Memory savings are lower than with
-        `enable_sequential_cpu_offload`, but performance is much better due to the iterative execution of the `unet`.
+        to `enable_sequential_cpu_offload`, this method moves one whole model at a time to the accelerator when its
+        `forward` method is called, and the model remains in accelerator until the next model runs. Memory savings are
+        lower than with `enable_sequential_cpu_offload`, but performance is much better due to the iterative execution
+        of the `unet`.
 
         Arguments:
             gpu_id (`int`, *optional*):
                 The ID of the accelerator that shall be used in inference. If not specified, it will default to 0.
-            device (`torch.Device` or `str`, *optional*, defaults to "cuda"):
+            device (`torch.Device` or `str`, *optional*, defaults to None):
                 The PyTorch device type of the accelerator that shall be used in inference. If not specified, it will
-                default to "cuda".
+                automatically detect the available accelerator and use.
         """
         self._maybe_raise_error_if_group_offload_active(raise_error=True)
 
-        is_pipeline_device_mapped = self.hf_device_map is not None and len(self.hf_device_map) > 1
+        is_pipeline_device_mapped = self._is_pipeline_device_mapped()
         if is_pipeline_device_mapped:
             raise ValueError(
                 "It seems like you have activated a device mapping strategy on the pipeline so calling `enable_model_cpu_offload() isn't allowed. You can call `reset_device_map()` first and then call `enable_model_cpu_offload()`."
@@ -1117,6 +1210,11 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
             raise ImportError("`enable_model_cpu_offload` requires `accelerate v0.17.0` or higher.")
 
         self.remove_all_hooks()
+
+        if device is None:
+            device = get_device()
+            if device == "cpu":
+                raise RuntimeError("`enable_model_cpu_offload` requires accelerator, but not found")
 
         torch_device = torch.device(device)
         device_index = torch_device.index
@@ -1135,9 +1233,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         self._offload_device = device
 
         self.to("cpu", silence_dtype_warnings=True)
-        device_mod = getattr(torch, device.type, None)
-        if hasattr(device_mod, "empty_cache") and device_mod.is_available():
-            device_mod.empty_cache()  # otherwise we don't see the memory savings (but they probably exist)
+        empty_device_cache(device.type)
 
         all_model_components = {k: v for k, v in self.components.items() if isinstance(v, torch.nn.Module)}
 
@@ -1151,7 +1247,9 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
 
             # This is because the model would already be placed on a CUDA device.
             _, _, is_loaded_in_8bit_bnb = _check_bnb_status(model)
-            if is_loaded_in_8bit_bnb:
+            if is_loaded_in_8bit_bnb and (
+                is_transformers_version("<", "4.58.0") or is_bitsandbytes_version("<", "0.48.0")
+            ):
                 logger.info(
                     f"Skipping the hook placement for the {model.__class__.__name__} as it is loaded in `bitsandbytes` 8bit."
                 )
@@ -1196,20 +1294,20 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         # make sure the model is in the same state as before calling it
         self.enable_model_cpu_offload(device=getattr(self, "_offload_device", "cuda"))
 
-    def enable_sequential_cpu_offload(self, gpu_id: Optional[int] = None, device: Union[torch.device, str] = "cuda"):
+    def enable_sequential_cpu_offload(self, gpu_id: int | None = None, device: torch.device | str = None):
         r"""
         Offloads all models to CPU using 🤗 Accelerate, significantly reducing memory usage. When called, the state
         dicts of all `torch.nn.Module` components (except those in `self._exclude_from_cpu_offload`) are saved to CPU
-        and then moved to `torch.device('meta')` and loaded to GPU only when their specific submodule has its `forward`
-        method called. Offloading happens on a submodule basis. Memory savings are higher than with
+        and then moved to `torch.device('meta')` and loaded to accelerator only when their specific submodule has its
+        `forward` method called. Offloading happens on a submodule basis. Memory savings are higher than with
         `enable_model_cpu_offload`, but performance is lower.
 
         Arguments:
             gpu_id (`int`, *optional*):
                 The ID of the accelerator that shall be used in inference. If not specified, it will default to 0.
-            device (`torch.Device` or `str`, *optional*, defaults to "cuda"):
+            device (`torch.Device` or `str`, *optional*, defaults to None):
                 The PyTorch device type of the accelerator that shall be used in inference. If not specified, it will
-                default to "cuda".
+                automatically detect the available accelerator and use.
         """
         self._maybe_raise_error_if_group_offload_active(raise_error=True)
 
@@ -1219,11 +1317,16 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
             raise ImportError("`enable_sequential_cpu_offload` requires `accelerate v0.14.0` or higher")
         self.remove_all_hooks()
 
-        is_pipeline_device_mapped = self.hf_device_map is not None and len(self.hf_device_map) > 1
+        is_pipeline_device_mapped = self._is_pipeline_device_mapped()
         if is_pipeline_device_mapped:
             raise ValueError(
                 "It seems like you have activated a device mapping strategy on the pipeline so calling `enable_sequential_cpu_offload() isn't allowed. You can call `reset_device_map()` first and then call `enable_sequential_cpu_offload()`."
             )
+
+        if device is None:
+            device = get_device()
+            if device == "cpu":
+                raise RuntimeError("`enable_sequential_cpu_offload` requires accelerator, but not found")
 
         torch_device = torch.device(device)
         device_index = torch_device.index
@@ -1242,10 +1345,9 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         self._offload_device = device
 
         if self.device.type != "cpu":
+            orig_device_type = self.device.type
             self.to("cpu", silence_dtype_warnings=True)
-            device_mod = getattr(torch, self.device.type, None)
-            if hasattr(device_mod, "empty_cache") and device_mod.is_available():
-                device_mod.empty_cache()  # otherwise we don't see the memory savings (but they probably exist)
+            empty_device_cache(orig_device_type)
 
         for name, model in self.components.items():
             if not isinstance(model, torch.nn.Module):
@@ -1258,6 +1360,133 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                 # are of type nn.Module
                 offload_buffers = len(model._parameters) > 0
                 cpu_offload(model, device, offload_buffers=offload_buffers)
+
+    def enable_group_offload(
+        self,
+        onload_device: torch.device,
+        offload_device: torch.device = torch.device("cpu"),
+        offload_type: str = "block_level",
+        num_blocks_per_group: int | None = None,
+        non_blocking: bool = False,
+        use_stream: bool = False,
+        record_stream: bool = False,
+        low_cpu_mem_usage=False,
+        offload_to_disk_path: str | None = None,
+        exclude_modules: str | list[str] | None = None,
+    ) -> None:
+        r"""
+        Applies group offloading to the internal layers of a torch.nn.Module. To understand what group offloading is,
+        and where it is beneficial, we need to first provide some context on how other supported offloading methods
+        work.
+
+        Typically, offloading is done at two levels:
+        - Module-level: In Diffusers, this can be enabled using the `ModelMixin::enable_model_cpu_offload()` method. It
+        works by offloading each component of a pipeline to the CPU for storage, and onloading to the accelerator
+        device when needed for computation. This method is more memory-efficient than keeping all components on the
+        accelerator, but the memory requirements are still quite high. For this method to work, one needs memory
+        equivalent to size of the model in runtime dtype + size of largest intermediate activation tensors to be able
+        to complete the forward pass.
+        - Leaf-level: In Diffusers, this can be enabled using the `ModelMixin::enable_sequential_cpu_offload()` method.
+          It
+        works by offloading the lowest leaf-level parameters of the computation graph to the CPU for storage, and
+        onloading only the leafs to the accelerator device for computation. This uses the lowest amount of accelerator
+        memory, but can be slower due to the excessive number of device synchronizations.
+
+        Group offloading is a middle ground between the two methods. It works by offloading groups of internal layers,
+        (either `torch.nn.ModuleList` or `torch.nn.Sequential`). This method uses lower memory than module-level
+        offloading. It is also faster than leaf-level/sequential offloading, as the number of device synchronizations
+        is reduced.
+
+        Another supported feature (for CUDA devices with support for asynchronous data transfer streams) is the ability
+        to overlap data transfer and computation to reduce the overall execution time compared to sequential
+        offloading. This is enabled using layer prefetching with streams, i.e., the layer that is to be executed next
+        starts onloading to the accelerator device while the current layer is being executed - this increases the
+        memory requirements slightly. Note that this implementation also supports leaf-level offloading but can be made
+        much faster when using streams.
+
+        Args:
+            onload_device (`torch.device`):
+                The device to which the group of modules are onloaded.
+            offload_device (`torch.device`, defaults to `torch.device("cpu")`):
+                The device to which the group of modules are offloaded. This should typically be the CPU. Default is
+                CPU.
+            offload_type (`str` or `GroupOffloadingType`, defaults to "block_level"):
+                The type of offloading to be applied. Can be one of "block_level" or "leaf_level". Default is
+                "block_level".
+            offload_to_disk_path (`str`, *optional*, defaults to `None`):
+                The path to the directory where parameters will be offloaded. Setting this option can be useful in
+                limited RAM environment settings where a reasonable speed-memory trade-off is desired.
+            num_blocks_per_group (`int`, *optional*):
+                The number of blocks per group when using offload_type="block_level". This is required when using
+                offload_type="block_level".
+            non_blocking (`bool`, defaults to `False`):
+                If True, offloading and onloading is done with non-blocking data transfer.
+            use_stream (`bool`, defaults to `False`):
+                If True, offloading and onloading is done asynchronously using a CUDA stream. This can be useful for
+                overlapping computation and data transfer.
+            record_stream (`bool`, defaults to `False`): When enabled with `use_stream`, it marks the current tensor
+                as having been used by this stream. It is faster at the expense of slightly more memory usage. Refer to
+                the [PyTorch official docs](https://pytorch.org/docs/stable/generated/torch.Tensor.record_stream.html)
+                more details.
+            low_cpu_mem_usage (`bool`, defaults to `False`):
+                If True, the CPU memory usage is minimized by pinning tensors on-the-fly instead of pre-pinning them.
+                This option only matters when using streamed CPU offloading (i.e. `use_stream=True`). This can be
+                useful when the CPU memory is a bottleneck but may counteract the benefits of using streams.
+            exclude_modules (`Union[str, List[str]]`, defaults to `None`): List of modules to exclude from offloading.
+
+        Example:
+            ```python
+            >>> from diffusers import DiffusionPipeline
+            >>> import torch
+
+            >>> pipe = DiffusionPipeline.from_pretrained("Qwen/Qwen-Image", torch_dtype=torch.bfloat16)
+
+            >>> pipe.enable_group_offload(
+            ...     onload_device=torch.device("cuda"),
+            ...     offload_device=torch.device("cpu"),
+            ...     offload_type="leaf_level",
+            ...     use_stream=True,
+            ... )
+            >>> image = pipe("a beautiful sunset").images[0]
+            ```
+        """
+        from ..hooks import apply_group_offloading
+
+        if isinstance(exclude_modules, str):
+            exclude_modules = [exclude_modules]
+        elif exclude_modules is None:
+            exclude_modules = []
+
+        unknown = set(exclude_modules) - self.components.keys()
+        if unknown:
+            logger.info(
+                f"The following modules are not present in pipeline: {', '.join(unknown)}. Ignore if this is expected."
+            )
+
+        group_offload_kwargs = {
+            "onload_device": onload_device,
+            "offload_device": offload_device,
+            "offload_type": offload_type,
+            "num_blocks_per_group": num_blocks_per_group,
+            "non_blocking": non_blocking,
+            "use_stream": use_stream,
+            "record_stream": record_stream,
+            "low_cpu_mem_usage": low_cpu_mem_usage,
+            "offload_to_disk_path": offload_to_disk_path,
+        }
+        for name, component in self.components.items():
+            if name not in exclude_modules and isinstance(component, torch.nn.Module):
+                if hasattr(component, "enable_group_offload"):
+                    component.enable_group_offload(**group_offload_kwargs)
+                else:
+                    apply_group_offloading(module=component, **group_offload_kwargs)
+
+        if exclude_modules:
+            for module_name in exclude_modules:
+                module = getattr(self, module_name, None)
+                if module is not None and isinstance(module, torch.nn.Module):
+                    module.to(onload_device)
+                    logger.debug(f"Placed `{module_name}` on {onload_device} device as it was in `exclude_modules`.")
 
     def reset_device_map(self):
         r"""
@@ -1274,7 +1503,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
 
     @classmethod
     @validate_hf_hub_args
-    def download(cls, pretrained_model_name, **kwargs) -> Union[str, os.PathLike]:
+    def download(cls, pretrained_model_name, **kwargs) -> str | os.PathLike:
         r"""
         Download and cache a PyTorch diffusion pipeline from pretrained pipeline weights.
 
@@ -1298,11 +1527,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                     - A path to a *directory* (`./my_pipeline_directory/`) containing a custom pipeline. The directory
                       must contain a file called `pipeline.py` that defines the custom pipeline.
 
-                <Tip warning={true}>
-
-                🧪 This is an experimental feature and may change in the future.
-
-                </Tip>
+                > [!WARNING] > 🧪 This is an experimental feature and may change in the future.
 
                 For more information on how to load and create custom pipelines, take a look at [How to contribute a
                 community pipeline](https://huggingface.co/docs/diffusers/main/en/using-diffusers/contribute_pipeline).
@@ -1356,12 +1581,8 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
             `os.PathLike`:
                 A path to the downloaded pipeline.
 
-        <Tip>
-
-        To use private or [gated models](https://huggingface.co/docs/hub/models-gated#gated-models), log-in with
-        `huggingface-cli login`.
-
-        </Tip>
+        > [!TIP] > To use private or [gated models](https://huggingface.co/docs/hub/models-gated#gated-models), log-in
+        with `hf > auth login
 
         """
         cache_dir = kwargs.pop("cache_dir", None)
@@ -1378,7 +1599,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         use_onnx = kwargs.pop("use_onnx", None)
         load_connected_pipeline = kwargs.pop("load_connected_pipeline", False)
         trust_remote_code = kwargs.pop("trust_remote_code", False)
-        dduf_file: Optional[Dict[str, DDUFEntry]] = kwargs.pop("dduf_file", None)
+        dduf_file: dict[str, DDUFEntry] | None = kwargs.pop("dduf_file", None)
 
         if dduf_file:
             if custom_pipeline:
@@ -1402,11 +1623,11 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         allow_patterns = None
         ignore_patterns = None
 
-        model_info_call_error: Optional[Exception] = None
+        model_info_call_error: Exception | None = None
         if not local_files_only:
             try:
                 info = model_info(pretrained_model_name, token=token, revision=revision)
-            except (HTTPError, OfflineModeIsEnabled, requests.ConnectionError) as e:
+            except (HfHubHTTPError, OfflineModeIsEnabled, requests.ConnectionError, httpx.NetworkError) as e:
                 logger.warning(f"Couldn't connect to the Hub: {e}.\nWill try to load from local cache.")
                 local_files_only = True
                 model_info_call_error = e  # save error to reraise it if model is not cached locally
@@ -1623,17 +1844,78 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
     @classmethod
     def _get_signature_types(cls):
         signature_types = {}
-        for k, v in inspect.signature(cls.__init__).parameters.items():
-            if inspect.isclass(v.annotation):
-                signature_types[k] = (v.annotation,)
-            elif get_origin(v.annotation) == Union:
-                signature_types[k] = get_args(v.annotation)
+        # Use get_type_hints to properly resolve string annotations (from __future__ import annotations)
+        try:
+            type_hints = get_type_hints(cls.__init__)
+        except Exception:
+            # Fallback to direct annotation access if get_type_hints fails
+            type_hints = {}
+            for k, v in inspect.signature(cls.__init__).parameters.items():
+                if v.annotation != inspect.Parameter.empty:
+                    type_hints[k] = v.annotation
+
+        # Get all parameters from the signature to ensure we don't miss any
+        all_params = inspect.signature(cls.__init__).parameters
+
+        for param_name, param in all_params.items():
+            # Skip 'self' parameter
+            if param_name == "self":
+                continue
+
+            # If we have type hints, use them
+            if param_name in type_hints:
+                annotation = type_hints[param_name]
+                if inspect.isclass(annotation):
+                    signature_types[param_name] = (annotation,)
+                elif get_origin(annotation) == Union:
+                    signature_types[param_name] = get_args(annotation)
+                elif isinstance(annotation, types.UnionType):
+                    # Handle PEP 604 union syntax (X | Y) introduced in Python 3.10+
+                    signature_types[param_name] = get_args(annotation)
+                elif get_origin(annotation) in [List, Dict, list, dict]:
+                    signature_types[param_name] = (annotation,)
+                else:
+                    logger.warning(f"cannot get type annotation for Parameter {param_name} of {cls}.")
+                    # Still add it with empty signature so it's in expected_types
+                    signature_types[param_name] = (inspect.Signature.empty,)
             else:
-                logger.warning(f"cannot get type annotation for Parameter {k} of {cls}.")
+                # No type annotation found - add with empty signature
+                signature_types[param_name] = (inspect.Signature.empty,)
+
         return signature_types
 
     @property
-    def components(self) -> Dict[str, Any]:
+    def parameters(self) -> dict[str, Any]:
+        r"""
+        The `self.parameters` property can be useful to run different pipelines with the same weights and
+        configurations without reallocating additional memory.
+
+        Returns (`dict`):
+            A dictionary containing all the optional parameters needed to initialize the pipeline.
+
+        Examples:
+
+        ```py
+        >>> from diffusers import (
+        ...     StableDiffusionPipeline,
+        ...     StableDiffusionImg2ImgPipeline,
+        ...     StableDiffusionInpaintPipeline,
+        ... )
+
+        >>> text2img = StableDiffusionPipeline.from_pretrained("stable-diffusion-v1-5/stable-diffusion-v1-5")
+        >>> img2img = StableDiffusionImg2ImgPipeline(**text2img.components, **text2img.parameters)
+        >>> inpaint = StableDiffusionInpaintPipeline(**text2img.components, **text2img.parameters)
+        ```
+        """
+        expected_modules, optional_parameters = self._get_signature_keys(self)
+        pipeline_parameters = {
+            k: self.config[k] for k in self.config.keys() if not k.startswith("_") and k in optional_parameters
+        }
+
+        return pipeline_parameters
+
+    @property
+    def components(self) -> dict[str, Any]:
         r"""
         The `self.components` property can be useful to run different pipelines with the same weights and
         configurations without reallocating additional memory.
@@ -1686,28 +1968,28 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                 f"`self._progress_bar_config` should be of type `dict`, but is {type(self._progress_bar_config)}."
             )
 
+        progress_bar_config = dict(self._progress_bar_config)
+        if "disable" not in progress_bar_config:
+            progress_bar_config["disable"] = not is_torch_dist_rank_zero()
+
         if iterable is not None:
-            return tqdm(iterable, **self._progress_bar_config)
+            return tqdm(iterable, **progress_bar_config)
         elif total is not None:
-            return tqdm(total=total, **self._progress_bar_config)
+            return tqdm(total=total, **progress_bar_config)
         else:
             raise ValueError("Either `total` or `iterable` has to be defined.")
 
     def set_progress_bar_config(self, **kwargs):
         self._progress_bar_config = kwargs
 
-    def enable_xformers_memory_efficient_attention(self, attention_op: Optional[Callable] = None):
+    def enable_xformers_memory_efficient_attention(self, attention_op: Callable | None = None):
         r"""
         Enable memory efficient attention from [xFormers](https://facebookresearch.github.io/xformers/). When this
         option is enabled, you should observe lower GPU memory usage and a potential speed up during inference. Speed
         up during training is not guaranteed.
 
-        <Tip warning={true}>
-
-        ⚠️ When memory efficient attention and sliced attention are both enabled, memory efficient attention takes
-        precedent.
-
-        </Tip>
+        > [!WARNING] > ⚠️ When memory efficient attention and sliced attention are both enabled, memory efficient
+        attention takes > precedent.
 
         Parameters:
             attention_op (`Callable`, *optional*):
@@ -1737,9 +2019,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         """
         self.set_use_memory_efficient_attention_xformers(False)
 
-    def set_use_memory_efficient_attention_xformers(
-        self, valid: bool, attention_op: Optional[Callable] = None
-    ) -> None:
+    def set_use_memory_efficient_attention_xformers(self, valid: bool, attention_op: Callable | None = None) -> None:
         # Recursively walk through all the children.
         # Any children which exposes the set_use_memory_efficient_attention_xformers method
         # gets the message
@@ -1757,19 +2037,16 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         for module in modules:
             fn_recursive_set_mem_eff(module)
 
-    def enable_attention_slicing(self, slice_size: Optional[Union[str, int]] = "auto"):
+    def enable_attention_slicing(self, slice_size: str | int = "auto"):
         r"""
         Enable sliced attention computation. When this option is enabled, the attention module splits the input tensor
         in slices to compute attention in several steps. For more than one attention head, the computation is performed
         sequentially over each head. This is useful to save some memory in exchange for a small speed decrease.
 
-        <Tip warning={true}>
-
-        ⚠️ Don't enable attention slicing if you're already using `scaled_dot_product_attention` (SDPA) from PyTorch
-        2.0 or xFormers. These attention computations are already very memory efficient so you won't need to enable
-        this function. If you enable attention slicing with SDPA or xFormers, it can lead to serious slow downs!
-
-        </Tip>
+        > [!WARNING] > ⚠️ Don't enable attention slicing if you're already using `scaled_dot_product_attention` (SDPA)
+        from PyTorch > 2.0 or xFormers. These attention computations are already very memory efficient so you won't
+        need to enable > this function. If you enable attention slicing with SDPA or xFormers, it can lead to serious
+        slow downs!
 
         Args:
             slice_size (`str` or `int`, *optional*, defaults to `"auto"`):
@@ -1805,7 +2082,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         # set slice_size = `None` to disable `attention slicing`
         self.enable_attention_slicing(None)
 
-    def set_attention_slice(self, slice_size: Optional[int]):
+    def set_attention_slice(self, slice_size: int | None):
         module_names, _ = self._get_signature_keys(self)
         modules = [getattr(self, n, None) for n in module_names]
         modules = [m for m in modules if isinstance(m, torch.nn.Module) and hasattr(m, "set_attention_slice")]
@@ -1914,11 +2191,13 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
             f"{'' if k.startswith('_') else '_'}{k}": v for k, v in original_config.items() if k not in pipeline_kwargs
         }
 
+        optional_components = (
+            pipeline._optional_components
+            if hasattr(pipeline, "_optional_components") and pipeline._optional_components
+            else []
+        )
         missing_modules = (
-            set(expected_modules)
-            - set(pipeline._optional_components)
-            - set(pipeline_kwargs.keys())
-            - set(true_optional_modules)
+            set(expected_modules) - set(optional_components) - set(pipeline_kwargs.keys()) - set(true_optional_modules)
         )
 
         if len(missing_modules) > 0:
@@ -1937,7 +2216,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         return new_pipeline
 
     def _maybe_raise_error_if_group_offload_active(
-        self, raise_error: bool = False, module: Optional[torch.nn.Module] = None
+        self, raise_error: bool = False, module: torch.nn.Module | None = None
     ) -> bool:
         from ..hooks.group_offloading import _is_group_offload_enabled
 
@@ -1954,6 +2233,21 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
                 return True
         return False
 
+    def _is_pipeline_device_mapped(self):
+        # We support passing `device_map="cuda"`, for example. This is helpful, in case
+        # users want to pass `device_map="cpu"` when initializing a pipeline. This explicit declaration is desirable
+        # in limited VRAM environments because quantized models often initialize directly on the accelerator.
+        device_map = self.hf_device_map
+        is_device_type_map = False
+        if isinstance(device_map, str):
+            try:
+                torch.device(device_map)
+                is_device_type_map = True
+            except RuntimeError:
+                pass
+
+        return not is_device_type_map and isinstance(device_map, dict) and len(device_map) > 1
+
 
 class StableDiffusionMixin:
     r"""
@@ -1965,6 +2259,12 @@ class StableDiffusionMixin:
         Enable sliced VAE decoding. When this option is enabled, the VAE will split the input tensor in slices to
         compute decoding in several steps. This is useful to save some memory and allow larger batch sizes.
         """
+        depr_message = f"Calling `enable_vae_slicing()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.enable_slicing()`."
+        deprecate(
+            "enable_vae_slicing",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.enable_slicing()
 
     def disable_vae_slicing(self):
@@ -1972,6 +2272,12 @@ class StableDiffusionMixin:
         Disable sliced VAE decoding. If `enable_vae_slicing` was previously enabled, this method will go back to
         computing decoding in one step.
         """
+        depr_message = f"Calling `disable_vae_slicing()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.disable_slicing()`."
+        deprecate(
+            "disable_vae_slicing",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.disable_slicing()
 
     def enable_vae_tiling(self):
@@ -1980,6 +2286,12 @@ class StableDiffusionMixin:
         compute decoding and encoding in several steps. This is useful for saving a large amount of memory and to allow
         processing larger images.
         """
+        depr_message = f"Calling `enable_vae_tiling()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.enable_tiling()`."
+        deprecate(
+            "enable_vae_tiling",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.enable_tiling()
 
     def disable_vae_tiling(self):
@@ -1987,10 +2299,16 @@ class StableDiffusionMixin:
         Disable tiled VAE decoding. If `enable_vae_tiling` was previously enabled, this method will go back to
         computing decoding in one step.
         """
+        depr_message = f"Calling `disable_vae_tiling()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.disable_tiling()`."
+        deprecate(
+            "disable_vae_tiling",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.disable_tiling()
 
     def enable_freeu(self, s1: float, s2: float, b1: float, b2: float):
-        r"""Enables the FreeU mechanism as in https://arxiv.org/abs/2309.11497.
+        r"""Enables the FreeU mechanism as in https://huggingface.co/papers/2309.11497.
 
         The suffixes after the scaling factors represent the stages where they are being applied.
 
@@ -2020,11 +2338,7 @@ class StableDiffusionMixin:
         Enables fused QKV projections. For self-attention modules, all projection matrices (i.e., query, key, value)
         are fused. For cross-attention modules, key and value projection matrices are fused.
 
-        <Tip warning={true}>
-
-        This API is 🧪 experimental.
-
-        </Tip>
+        > [!WARNING] > This API is 🧪 experimental.
 
         Args:
             unet (`bool`, defaults to `True`): To apply fusion on the UNet.
@@ -2049,11 +2363,7 @@ class StableDiffusionMixin:
     def unfuse_qkv_projections(self, unet: bool = True, vae: bool = True):
         """Disable QKV projection fusion if enabled.
 
-        <Tip warning={true}>
-
-        This API is 🧪 experimental.
-
-        </Tip>
+        > [!WARNING] > This API is 🧪 experimental.
 
         Args:
             unet (`bool`, defaults to `True`): To apply fusion on the UNet.

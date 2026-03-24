@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-from typing import TYPE_CHECKING, Dict, List, Union
+from typing import TYPE_CHECKING
+
+from torch import nn
 
 from ..utils import logging
 
@@ -38,9 +40,7 @@ def _translate_into_actual_layer_name(name):
     return ".".join((updown, block, attn))
 
 
-def _maybe_expand_lora_scales(
-    unet: "UNet2DConditionModel", weight_scales: List[Union[float, Dict]], default_scale=1.0
-):
+def _maybe_expand_lora_scales(unet: "UNet2DConditionModel", weight_scales: list[float | dict], default_scale=1.0):
     blocks_with_transformer = {
         "down": [i for i, block in enumerate(unet.down_blocks) if hasattr(block, "attentions")],
         "up": [i for i, block in enumerate(unet.up_blocks) if hasattr(block, "attentions")],
@@ -52,7 +52,7 @@ def _maybe_expand_lora_scales(
             weight_for_adapter,
             blocks_with_transformer,
             transformer_per_block,
-            unet.state_dict(),
+            model=unet,
             default_scale=default_scale,
         )
         for weight_for_adapter in weight_scales
@@ -62,21 +62,21 @@ def _maybe_expand_lora_scales(
 
 
 def _maybe_expand_lora_scales_for_one_adapter(
-    scales: Union[float, Dict],
-    blocks_with_transformer: Dict[str, int],
-    transformer_per_block: Dict[str, int],
-    state_dict: None,
+    scales: float | dict,
+    blocks_with_transformer: dict[str, int],
+    transformer_per_block: dict[str, int],
+    model: nn.Module,
     default_scale: float = 1.0,
 ):
     """
     Expands the inputs into a more granular dictionary. See the example below for more details.
 
     Parameters:
-        scales (`Union[float, Dict]`):
+        scales (`float | Dict`):
             Scales dict to expand.
-        blocks_with_transformer (`Dict[str, int]`):
+        blocks_with_transformer (`dict[str, int]`):
             Dict with keys 'up' and 'down', showing which blocks have transformer layers
-        transformer_per_block (`Dict[str, int]`):
+        transformer_per_block (`dict[str, int]`):
             Dict with keys 'up' and 'down', showing how many transformer layers each block has
 
     E.g. turns
@@ -154,6 +154,7 @@ def _maybe_expand_lora_scales_for_one_adapter(
 
         del scales[updown]
 
+    state_dict = model.state_dict()
     for layer in scales.keys():
         if not any(_translate_into_actual_layer_name(layer) in module for module in state_dict.keys()):
             raise ValueError(

@@ -1,4 +1,4 @@
-# Copyright 2024 The Genmo team and The HuggingFace Team.
+# Copyright 2025 The Lightricks team and The HuggingFace Team.
 # All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,19 +13,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import math
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from ...configuration_utils import ConfigMixin, register_to_config
 from ...loaders import FromOriginalModelMixin, PeftAdapterMixin
-from ...utils import USE_PEFT_BACKEND, logging, scale_lora_layers, unscale_lora_layers
+from ...utils import apply_lora_scale, deprecate, is_torch_version, logging
 from ...utils.torch_utils import maybe_allow_in_graph
-from ..attention import FeedForward
-from ..attention_processor import Attention
+from .._modeling_parallel import ContextParallelInput, ContextParallelOutput
+from ..attention import AttentionMixin, AttentionModuleMixin, FeedForward
+from ..attention_dispatch import dispatch_attention_fn
 from ..cache_utils import CacheMixin
 from ..embeddings import PixArtAlphaTextProjection
 from ..modeling_outputs import Transformer2DModelOutput
@@ -37,24 +38,35 @@ logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
 class LTXVideoAttentionProcessor2_0:
+    def __new__(cls, *args, **kwargs):
+        deprecation_message = "`LTXVideoAttentionProcessor2_0` is deprecated and this will be removed in a future version. Please use `LTXVideoAttnProcessor`"
+        deprecate("LTXVideoAttentionProcessor2_0", "1.0.0", deprecation_message)
+
+        return LTXVideoAttnProcessor(*args, **kwargs)
+
+
+class LTXVideoAttnProcessor:
     r"""
-    Processor for implementing scaled dot-product attention (enabled by default if you're using PyTorch 2.0). This is
-    used in the LTX model. It applies a normalization layer and rotary embedding on the query and key vector.
+    Processor for implementing attention (SDPA is used by default if you're using PyTorch 2.0). This is used in the LTX
+    model. It applies a normalization layer and rotary embedding on the query and key vector.
     """
 
+    _attention_backend = None
+    _parallel_config = None
+
     def __init__(self):
-        if not hasattr(F, "scaled_dot_product_attention"):
-            raise ImportError(
-                "LTXVideoAttentionProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0."
+        if is_torch_version("<", "2.0"):
+            raise ValueError(
+                "LTX attention processors require a minimum PyTorch version of 2.0. Please upgrade your PyTorch installation."
             )
 
     def __call__(
         self,
-        attn: Attention,
+        attn: "LTXAttention",
         hidden_states: torch.Tensor,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        image_rotary_emb: Optional[torch.Tensor] = None,
+        encoder_hidden_states: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        image_rotary_emb: torch.Tensor | None = None,
     ) -> torch.Tensor:
         batch_size, sequence_length, _ = (
             hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
@@ -78,19 +90,90 @@ class LTXVideoAttentionProcessor2_0:
             query = apply_rotary_emb(query, image_rotary_emb)
             key = apply_rotary_emb(key, image_rotary_emb)
 
-        query = query.unflatten(2, (attn.heads, -1)).transpose(1, 2)
-        key = key.unflatten(2, (attn.heads, -1)).transpose(1, 2)
-        value = value.unflatten(2, (attn.heads, -1)).transpose(1, 2)
+        query = query.unflatten(2, (attn.heads, -1))
+        key = key.unflatten(2, (attn.heads, -1))
+        value = value.unflatten(2, (attn.heads, -1))
 
-        hidden_states = F.scaled_dot_product_attention(
-            query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
+        hidden_states = dispatch_attention_fn(
+            query,
+            key,
+            value,
+            attn_mask=attention_mask,
+            dropout_p=0.0,
+            is_causal=False,
+            backend=self._attention_backend,
+            parallel_config=self._parallel_config,
         )
-        hidden_states = hidden_states.transpose(1, 2).flatten(2, 3)
+        hidden_states = hidden_states.flatten(2, 3)
         hidden_states = hidden_states.to(query.dtype)
 
         hidden_states = attn.to_out[0](hidden_states)
         hidden_states = attn.to_out[1](hidden_states)
         return hidden_states
+
+
+class LTXAttention(torch.nn.Module, AttentionModuleMixin):
+    _default_processor_cls = LTXVideoAttnProcessor
+    _available_processors = [LTXVideoAttnProcessor]
+
+    def __init__(
+        self,
+        query_dim: int,
+        heads: int = 8,
+        kv_heads: int = 8,
+        dim_head: int = 64,
+        dropout: float = 0.0,
+        bias: bool = True,
+        cross_attention_dim: int | None = None,
+        out_bias: bool = True,
+        qk_norm: str = "rms_norm_across_heads",
+        processor=None,
+    ):
+        super().__init__()
+        if qk_norm != "rms_norm_across_heads":
+            raise NotImplementedError("Only 'rms_norm_across_heads' is supported as a valid value for `qk_norm`.")
+
+        self.head_dim = dim_head
+        self.inner_dim = dim_head * heads
+        self.inner_kv_dim = self.inner_dim if kv_heads is None else dim_head * kv_heads
+        self.query_dim = query_dim
+        self.cross_attention_dim = cross_attention_dim if cross_attention_dim is not None else query_dim
+        self.use_bias = bias
+        self.dropout = dropout
+        self.out_dim = query_dim
+        self.heads = heads
+
+        norm_eps = 1e-5
+        norm_elementwise_affine = True
+        self.norm_q = torch.nn.RMSNorm(dim_head * heads, eps=norm_eps, elementwise_affine=norm_elementwise_affine)
+        self.norm_k = torch.nn.RMSNorm(dim_head * kv_heads, eps=norm_eps, elementwise_affine=norm_elementwise_affine)
+        self.to_q = torch.nn.Linear(query_dim, self.inner_dim, bias=bias)
+        self.to_k = torch.nn.Linear(self.cross_attention_dim, self.inner_kv_dim, bias=bias)
+        self.to_v = torch.nn.Linear(self.cross_attention_dim, self.inner_kv_dim, bias=bias)
+        self.to_out = torch.nn.ModuleList([])
+        self.to_out.append(torch.nn.Linear(self.inner_dim, self.out_dim, bias=out_bias))
+        self.to_out.append(torch.nn.Dropout(dropout))
+
+        if processor is None:
+            processor = self._default_processor_cls()
+        self.set_processor(processor)
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        encoder_hidden_states: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        image_rotary_emb: torch.Tensor | None = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        attn_parameters = set(inspect.signature(self.processor.__call__).parameters.keys())
+        unused_kwargs = [k for k, _ in kwargs.items() if k not in attn_parameters]
+        if len(unused_kwargs) > 0:
+            logger.warning(
+                f"attention_kwargs {unused_kwargs} are not expected by {self.processor.__class__.__name__} and will be ignored."
+            )
+        kwargs = {k: w for k, w in kwargs.items() if k in attn_parameters}
+        return self.processor(self, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb, **kwargs)
 
 
 class LTXVideoRotaryPosEmbed(nn.Module):
@@ -120,7 +203,7 @@ class LTXVideoRotaryPosEmbed(nn.Module):
         num_frames: int,
         height: int,
         width: int,
-        rope_interpolation_scale: Tuple[torch.Tensor, float, float],
+        rope_interpolation_scale: tuple[torch.Tensor, float, float],
         device: torch.device,
     ) -> torch.Tensor:
         # Always compute rope in fp32
@@ -143,12 +226,12 @@ class LTXVideoRotaryPosEmbed(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        num_frames: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        rope_interpolation_scale: Optional[Tuple[torch.Tensor, float, float]] = None,
-        video_coords: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        num_frames: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        rope_interpolation_scale: tuple[torch.Tensor, float, float] | None = None,
+        video_coords: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         batch_size = hidden_states.size(0)
 
         if video_coords is None:
@@ -231,7 +314,7 @@ class LTXVideoTransformerBlock(nn.Module):
         super().__init__()
 
         self.norm1 = RMSNorm(dim, eps=eps, elementwise_affine=elementwise_affine)
-        self.attn1 = Attention(
+        self.attn1 = LTXAttention(
             query_dim=dim,
             heads=num_attention_heads,
             kv_heads=num_attention_heads,
@@ -240,11 +323,10 @@ class LTXVideoTransformerBlock(nn.Module):
             cross_attention_dim=None,
             out_bias=attention_out_bias,
             qk_norm=qk_norm,
-            processor=LTXVideoAttentionProcessor2_0(),
         )
 
         self.norm2 = RMSNorm(dim, eps=eps, elementwise_affine=elementwise_affine)
-        self.attn2 = Attention(
+        self.attn2 = LTXAttention(
             query_dim=dim,
             cross_attention_dim=cross_attention_dim,
             heads=num_attention_heads,
@@ -253,7 +335,6 @@ class LTXVideoTransformerBlock(nn.Module):
             bias=attention_bias,
             out_bias=attention_out_bias,
             qk_norm=qk_norm,
-            processor=LTXVideoAttentionProcessor2_0(),
         )
 
         self.ff = FeedForward(dim, activation_fn=activation_fn)
@@ -265,14 +346,16 @@ class LTXVideoTransformerBlock(nn.Module):
         hidden_states: torch.Tensor,
         encoder_hidden_states: torch.Tensor,
         temb: torch.Tensor,
-        image_rotary_emb: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
-        encoder_attention_mask: Optional[torch.Tensor] = None,
+        image_rotary_emb: tuple[torch.Tensor, torch.Tensor] | None = None,
+        encoder_attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         batch_size = hidden_states.size(0)
         norm_hidden_states = self.norm1(hidden_states)
 
         num_ada_params = self.scale_shift_table.shape[0]
-        ada_values = self.scale_shift_table[None, None] + temb.reshape(batch_size, temb.size(1), num_ada_params, -1)
+        ada_values = self.scale_shift_table[None, None].to(temb.device) + temb.reshape(
+            batch_size, temb.size(1), num_ada_params, -1
+        )
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = ada_values.unbind(dim=2)
         norm_hidden_states = norm_hidden_states * (1 + scale_msa) + shift_msa
 
@@ -299,7 +382,9 @@ class LTXVideoTransformerBlock(nn.Module):
 
 
 @maybe_allow_in_graph
-class LTXVideoTransformer3DModel(ModelMixin, ConfigMixin, FromOriginalModelMixin, PeftAdapterMixin, CacheMixin):
+class LTXVideoTransformer3DModel(
+    ModelMixin, ConfigMixin, AttentionMixin, FromOriginalModelMixin, PeftAdapterMixin, CacheMixin
+):
     r"""
     A Transformer model for video-like data used in [LTX](https://huggingface.co/Lightricks/LTX-Video).
 
@@ -328,6 +413,19 @@ class LTXVideoTransformer3DModel(ModelMixin, ConfigMixin, FromOriginalModelMixin
 
     _supports_gradient_checkpointing = True
     _skip_layerwise_casting_patterns = ["norm"]
+    _repeated_blocks = ["LTXVideoTransformerBlock"]
+    _cp_plan = {
+        "": {
+            "hidden_states": ContextParallelInput(split_dim=1, expected_dims=3, split_output=False),
+            "encoder_hidden_states": ContextParallelInput(split_dim=1, expected_dims=3, split_output=False),
+            "encoder_attention_mask": ContextParallelInput(split_dim=1, expected_dims=2, split_output=False),
+        },
+        "rope": {
+            0: ContextParallelInput(split_dim=1, expected_dims=3, split_output=True),
+            1: ContextParallelInput(split_dim=1, expected_dims=3, split_output=True),
+        },
+        "proj_out": ContextParallelOutput(gather_dim=1, expected_dims=3),
+    }
 
     @register_to_config
     def __init__(
@@ -393,35 +491,21 @@ class LTXVideoTransformer3DModel(ModelMixin, ConfigMixin, FromOriginalModelMixin
 
         self.gradient_checkpointing = False
 
+    @apply_lora_scale("attention_kwargs")
     def forward(
         self,
         hidden_states: torch.Tensor,
         encoder_hidden_states: torch.Tensor,
         timestep: torch.LongTensor,
         encoder_attention_mask: torch.Tensor,
-        num_frames: Optional[int] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        rope_interpolation_scale: Optional[Union[Tuple[float, float, float], torch.Tensor]] = None,
-        video_coords: Optional[torch.Tensor] = None,
-        attention_kwargs: Optional[Dict[str, Any]] = None,
+        num_frames: int | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        rope_interpolation_scale: tuple[float, float, float] | torch.Tensor | None = None,
+        video_coords: torch.Tensor | None = None,
+        attention_kwargs: dict[str, Any] | None = None,
         return_dict: bool = True,
     ) -> torch.Tensor:
-        if attention_kwargs is not None:
-            attention_kwargs = attention_kwargs.copy()
-            lora_scale = attention_kwargs.pop("scale", 1.0)
-        else:
-            lora_scale = 1.0
-
-        if USE_PEFT_BACKEND:
-            # weight the lora layers by setting `lora_scale` for each PEFT layer
-            scale_lora_layers(self, lora_scale)
-        else:
-            if attention_kwargs is not None and attention_kwargs.get("scale", None) is not None:
-                logger.warning(
-                    "Passing `scale` via `attention_kwargs` when not using the PEFT backend is ineffective."
-                )
-
         image_rotary_emb = self.rope(hidden_states, num_frames, height, width, rope_interpolation_scale, video_coords)
 
         # convert encoder_attention_mask to a bias the same way we do for attention_mask
@@ -470,10 +554,6 @@ class LTXVideoTransformer3DModel(ModelMixin, ConfigMixin, FromOriginalModelMixin
         hidden_states = hidden_states * (1 + scale) + shift
         output = self.proj_out(hidden_states)
 
-        if USE_PEFT_BACKEND:
-            # remove `lora_scale` from each PEFT layer
-            unscale_lora_layers(self, lora_scale)
-
         if not return_dict:
             return (output,)
         return Transformer2DModelOutput(sample=output)
@@ -481,7 +561,7 @@ class LTXVideoTransformer3DModel(ModelMixin, ConfigMixin, FromOriginalModelMixin
 
 def apply_rotary_emb(x, freqs):
     cos, sin = freqs
-    x_real, x_imag = x.unflatten(2, (-1, 2)).unbind(-1)  # [B, S, H, D // 2]
+    x_real, x_imag = x.unflatten(2, (-1, 2)).unbind(-1)  # [B, S, C // 2]
     x_rotated = torch.stack([-x_imag, x_real], dim=-1).flatten(2)
     out = (x.float() * cos + x_rotated.float() * sin).to(x.dtype)
     return out

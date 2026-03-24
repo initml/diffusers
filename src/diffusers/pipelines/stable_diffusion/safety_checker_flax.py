@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from typing import Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -76,7 +74,7 @@ class FlaxStableDiffusionSafetyChecker(FlaxPreTrainedModel):
     def __init__(
         self,
         config: CLIPConfig,
-        input_shape: Optional[Tuple] = None,
+        input_shape: tuple | None = None,
         seed: int = 0,
         dtype: jnp.dtype = jnp.float32,
         _do_init: bool = True,
@@ -87,7 +85,7 @@ class FlaxStableDiffusionSafetyChecker(FlaxPreTrainedModel):
         module = self.module_class(config=config, dtype=dtype, **kwargs)
         super().__init__(config, module, input_shape=input_shape, seed=seed, dtype=dtype, _do_init=_do_init)
 
-    def init_weights(self, rng: jax.Array, input_shape: Tuple, params: FrozenDict = None) -> FrozenDict:
+    def init_weights(self, rng: jax.Array, input_shape: tuple, params: FrozenDict = None) -> FrozenDict:
         # init input tensor
         clip_input = jax.random.normal(rng, input_shape)
 

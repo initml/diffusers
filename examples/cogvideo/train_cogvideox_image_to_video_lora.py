@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team.
+# Copyright 2025 The HuggingFace Team.
 # All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,7 +61,7 @@ if is_wandb_available():
     import wandb
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
-check_min_version("0.33.0.dev0")
+check_min_version("0.37.0.dev0")
 
 logger = get_logger(__name__)
 
@@ -149,13 +149,13 @@ def get_args():
         "--validation_prompt",
         type=str,
         default=None,
-        help="One or more prompt(s) that is used during validation to verify that the model is learning. Multiple validation prompts should be separated by the '--validation_prompt_seperator' string.",
+        help="One or more prompt(s) that is used during validation to verify that the model is learning. Multiple validation prompts should be separated by the '--validation_prompt_separator' string.",
     )
     parser.add_argument(
         "--validation_images",
         type=str,
         default=None,
-        help="One or more image path(s) that is used during validation to verify that the model is learning. Multiple validation paths should be separated by the '--validation_prompt_seperator' string. These should correspond to the order of the validation prompts.",
+        help="One or more image path(s) that is used during validation to verify that the model is learning. Multiple validation paths should be separated by the '--validation_prompt_separator' string. These should correspond to the order of the validation prompts.",
     )
     parser.add_argument(
         "--validation_prompt_separator",
@@ -432,9 +432,9 @@ def get_args():
 class VideoDataset(Dataset):
     def __init__(
         self,
-        instance_data_root: Optional[str] = None,
-        dataset_name: Optional[str] = None,
-        dataset_config_name: Optional[str] = None,
+        instance_data_root: str | None = None,
+        dataset_name: str | None = None,
+        dataset_config_name: str | None = None,
         caption_column: str = "text",
         video_column: str = "video",
         height: int = 480,
@@ -443,8 +443,8 @@ class VideoDataset(Dataset):
         max_num_frames: int = 49,
         skip_frames_start: int = 0,
         skip_frames_end: int = 0,
-        cache_dir: Optional[str] = None,
-        id_token: Optional[str] = None,
+        cache_dir: str | None = None,
+        id_token: str | None = None,
     ) -> None:
         super().__init__()
 
@@ -555,7 +555,7 @@ class VideoDataset(Dataset):
 
         if any(not path.is_file() for path in instance_videos):
             raise ValueError(
-                "Expected '--video_column' to be a path to a file in `--instance_data_root` containing line-separated paths to video data but found atleast one path that is not a valid file."
+                "Expected '--video_column' to be a path to a file in `--instance_data_root` containing line-separated paths to video data but found at least one path that is not a valid file."
             )
 
         return instance_prompts, instance_videos
@@ -879,7 +879,7 @@ def prepare_rotary_positional_embeddings(
 
 
 def get_optimizer(args, params_to_optimize, use_deepspeed: bool = False):
-    # Use DeepSpeed optimzer
+    # Use DeepSpeed optimizer
     if use_deepspeed:
         from accelerate.utils import DummyOptim
 
@@ -962,7 +962,7 @@ def main(args):
     if args.report_to == "wandb" and args.hub_token is not None:
         raise ValueError(
             "You cannot use both --report_to=wandb and --hub_token due to a security risk of exposing your token."
-            " Please use `huggingface-cli login` to authenticate with the Hub."
+            " Please use `hf auth login` to authenticate with the Hub."
         )
 
     if torch.backends.mps.is_available() and args.mixed_precision == "bf16":
@@ -1138,7 +1138,7 @@ def main(args):
         lora_state_dict = CogVideoXImageToVideoPipeline.lora_state_dict(input_dir)
 
         transformer_state_dict = {
-            f'{k.replace("transformer.", "")}': v for k, v in lora_state_dict.items() if k.startswith("transformer.")
+            f"{k.replace('transformer.', '')}": v for k, v in lora_state_dict.items() if k.startswith("transformer.")
         }
         transformer_state_dict = convert_unet_state_dict_to_peft(transformer_state_dict)
         incompatible_keys = set_peft_model_state_dict(transformer_, transformer_state_dict, adapter_name="default")

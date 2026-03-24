@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable
 
 import torch
 from transformers import CLIPTextModelWithProjection, CLIPTokenizer
@@ -21,7 +21,7 @@ from ...image_processor import VaeImageProcessor
 from ...models import UVit2DModel, VQModel
 from ...schedulers import AmusedScheduler
 from ...utils import is_torch_xla_available, replace_example_docstring
-from ..pipeline_utils import DiffusionPipeline, ImagePipelineOutput
+from ..pipeline_utils import DeprecatedPipelineMixin, DiffusionPipeline, ImagePipelineOutput
 
 
 if is_torch_xla_available():
@@ -47,7 +47,8 @@ EXAMPLE_DOC_STRING = """
 """
 
 
-class AmusedPipeline(DiffusionPipeline):
+class AmusedPipeline(DeprecatedPipelineMixin, DiffusionPipeline):
+    _last_supported_version = "0.33.1"
     image_processor: VaeImageProcessor
     vqvae: VQModel
     tokenizer: CLIPTokenizer
@@ -83,33 +84,33 @@ class AmusedPipeline(DiffusionPipeline):
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
         self,
-        prompt: Optional[Union[List[str], str]] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
+        prompt: list[str] | str | None = None,
+        height: int | None = None,
+        width: int | None = None,
         num_inference_steps: int = 12,
         guidance_scale: float = 10.0,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        num_images_per_prompt: Optional[int] = 1,
-        generator: Optional[torch.Generator] = None,
-        latents: Optional[torch.IntTensor] = None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        encoder_hidden_states: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        negative_encoder_hidden_states: Optional[torch.Tensor] = None,
+        negative_prompt: str | list[str] | None = None,
+        num_images_per_prompt: int | None = 1,
+        generator: torch.Generator | None = None,
+        latents: torch.IntTensor | None = None,
+        prompt_embeds: torch.Tensor | None = None,
+        encoder_hidden_states: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        negative_encoder_hidden_states: torch.Tensor | None = None,
         output_type="pil",
         return_dict: bool = True,
-        callback: Optional[Callable[[int, int, torch.Tensor], None]] = None,
+        callback: Callable[[int, int, torch.Tensor], None] | None = None,
         callback_steps: int = 1,
-        cross_attention_kwargs: Optional[Dict[str, Any]] = None,
+        cross_attention_kwargs: dict[str, Any] | None = None,
         micro_conditioning_aesthetic_score: int = 6,
-        micro_conditioning_crop_coord: Tuple[int, int] = (0, 0),
-        temperature: Union[int, Tuple[int, int], List[int]] = (2, 0),
+        micro_conditioning_crop_coord: tuple[int, int] = (0, 0),
+        temperature: int | tuple[int, int] | list[int] = (2, 0),
     ):
         """
         The call function to the pipeline for generation.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide image generation. If not defined, you need to pass `prompt_embeds`.
             height (`int`, *optional*, defaults to `self.transformer.config.sample_size * self.vae_scale_factor`):
                 The height in pixels of the generated image.
@@ -121,7 +122,7 @@ class AmusedPipeline(DiffusionPipeline):
             guidance_scale (`float`, *optional*, defaults to 10.0):
                 A higher guidance scale value encourages the model to generate images closely linked to the text
                 `prompt` at the expense of lower image quality. Guidance scale is enabled when `guidance_scale > 1`.
-            negative_prompt (`str` or `List[str]`, *optional*):
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide what to not include in image generation. If not defined, you need to
                 pass `negative_prompt_embeds` instead. Ignored when not using guidance (`guidance_scale < 1`).
             num_images_per_prompt (`int`, *optional*, defaults to 1):
@@ -131,7 +132,7 @@ class AmusedPipeline(DiffusionPipeline):
                 generation deterministic.
             latents (`torch.IntTensor`, *optional*):
                 Pre-generated tokens representing latent vectors in `self.vqvae`, to be used as inputs for image
-                gneration. If not provided, the starting latents will be completely masked.
+                generation. If not provided, the starting latents will be completely masked.
             prompt_embeds (`torch.Tensor`, *optional*):
                 Pre-generated text embeddings. Can be used to easily tweak text inputs (prompt weighting). If not
                 provided, text embeddings are generated from the `prompt` input argument. A single vector from the
@@ -160,11 +161,11 @@ class AmusedPipeline(DiffusionPipeline):
             micro_conditioning_aesthetic_score (`int`, *optional*, defaults to 6):
                 The targeted aesthetic score according to the laion aesthetic classifier. See
                 https://laion.ai/blog/laion-aesthetics/ and the micro-conditioning section of
-                https://arxiv.org/abs/2307.01952.
-            micro_conditioning_crop_coord (`Tuple[int]`, *optional*, defaults to (0, 0)):
+                https://huggingface.co/papers/2307.01952.
+            micro_conditioning_crop_coord (`tuple[int]`, *optional*, defaults to (0, 0)):
                 The targeted height, width crop coordinates. See the micro-conditioning section of
-                https://arxiv.org/abs/2307.01952.
-            temperature (`Union[int, Tuple[int, int], List[int]]`, *optional*, defaults to (2, 0)):
+                https://huggingface.co/papers/2307.01952.
+            temperature (`int | tuple[int, int, list[int]]`, *optional*, defaults to (2, 0)):
                 Configures the temperature scheduler on `self.scheduler` see `AmusedScheduler#set_timesteps`.
 
         Examples:

@@ -1,7 +1,7 @@
 import copy
 import inspect
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Union
+from typing import Callable
 
 import numpy as np
 import PIL.Image
@@ -23,8 +23,8 @@ from ...utils import (
     scale_lora_layers,
     unscale_lora_layers,
 )
-from ...utils.torch_utils import randn_tensor
-from ..pipeline_utils import DiffusionPipeline, StableDiffusionMixin
+from ...utils.torch_utils import empty_device_cache, randn_tensor
+from ..pipeline_utils import DeprecatedPipelineMixin, DiffusionPipeline, StableDiffusionMixin
 from ..stable_diffusion import StableDiffusionSafetyChecker
 
 
@@ -199,16 +199,16 @@ class TextToVideoPipelineOutput(BaseOutput):
     Output class for zero-shot text-to-video pipeline.
 
     Args:
-        images (`[List[PIL.Image.Image]`, `np.ndarray`]):
-            List of denoised PIL images of length `batch_size` or NumPy array of shape `(batch_size, height, width,
+        images (`[list[PIL.Image.Image]`, `np.ndarray`]):
+            list of denoised PIL images of length `batch_size` or NumPy array of shape `(batch_size, height, width,
             num_channels)`.
-        nsfw_content_detected (`[List[bool]]`):
-            List indicating whether the corresponding generated image contains "not-safe-for-work" (nsfw) content or
+        nsfw_content_detected (`[list[bool]]`):
+            list indicating whether the corresponding generated image contains "not-safe-for-work" (nsfw) content or
             `None` if safety checking could not be performed.
     """
 
-    images: Union[List[PIL.Image.Image], np.ndarray]
-    nsfw_content_detected: Optional[List[bool]]
+    images: list[PIL.Image.Image] | np.ndarray
+    nsfw_content_detected: list[bool] | None
 
 
 def coords_grid(batch, ht, wd, device):
@@ -296,12 +296,14 @@ def create_motion_field_and_warp_latents(motion_field_strength_x, motion_field_s
 
 
 class TextToVideoZeroPipeline(
+    DeprecatedPipelineMixin,
     DiffusionPipeline,
     StableDiffusionMixin,
     TextualInversionLoaderMixin,
     StableDiffusionLoraLoaderMixin,
     FromSingleFileMixin,
 ):
+    _last_supported_version = "0.33.1"
     r"""
     Pipeline for zero-shot text-to-video generation using Stable Diffusion.
 
@@ -372,7 +374,7 @@ class TextToVideoZeroPipeline(
                 Timestep at t0.
             t1:
                 Timestamp at t1.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 A [`torch.Generator`](https://pytorch.org/docs/stable/generated/torch.Generator.html) to make
                 generation deterministic.
 
@@ -464,7 +466,6 @@ class TextToVideoZeroPipeline(
 
         return latents.clone().detach()
 
-    # Copied from diffusers.pipelines.stable_diffusion_k_diffusion.pipeline_stable_diffusion_k_diffusion.StableDiffusionKDiffusionPipeline.check_inputs
     def check_inputs(
         self,
         prompt,
@@ -543,32 +544,32 @@ class TextToVideoZeroPipeline(
     @torch.no_grad()
     def __call__(
         self,
-        prompt: Union[str, List[str]],
-        video_length: Optional[int] = 8,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
+        prompt: str | list[str],
+        video_length: int | None = 8,
+        height: int | None = None,
+        width: int | None = None,
         num_inference_steps: int = 50,
         guidance_scale: float = 7.5,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        num_videos_per_prompt: Optional[int] = 1,
+        negative_prompt: str | list[str] | None = None,
+        num_videos_per_prompt: int | None = 1,
         eta: float = 0.0,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
         motion_field_strength_x: float = 12,
         motion_field_strength_y: float = 12,
-        output_type: Optional[str] = "tensor",
+        output_type: str | None = "tensor",
         return_dict: bool = True,
-        callback: Optional[Callable[[int, int, torch.Tensor], None]] = None,
-        callback_steps: Optional[int] = 1,
+        callback: Callable[[int, int, torch.Tensor], None] | None = None,
+        callback_steps: int | None = 1,
         t0: int = 44,
         t1: int = 47,
-        frame_ids: Optional[List[int]] = None,
+        frame_ids: list[int] | None = None,
     ):
         """
         The call function to the pipeline for generation.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide image generation. If not defined, you need to pass `prompt_embeds`.
             video_length (`int`, *optional*, defaults to 8):
                 The number of generated video frames.
@@ -582,15 +583,15 @@ class TextToVideoZeroPipeline(
             guidance_scale (`float`, *optional*, defaults to 7.5):
                 A higher guidance scale value encourages the model to generate images closely linked to the text
                 `prompt` at the expense of lower image quality. Guidance scale is enabled when `guidance_scale > 1`.
-            negative_prompt (`str` or `List[str]`, *optional*):
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide what to not include in video generation. If not defined, you need to
                 pass `negative_prompt_embeds` instead. Ignored when not using guidance (`guidance_scale < 1`).
             num_videos_per_prompt (`int`, *optional*, defaults to 1):
                 The number of videos to generate per prompt.
             eta (`float`, *optional*, defaults to 0.0):
-                Corresponds to parameter eta (η) from the [DDIM](https://arxiv.org/abs/2010.02502) paper. Only applies
-                to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+                Corresponds to parameter eta (η) from the [DDIM](https://huggingface.co/papers/2010.02502) paper. Only
+                applies to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 A [`torch.Generator`](https://pytorch.org/docs/stable/generated/torch.Generator.html) to make
                 generation deterministic.
             latents (`torch.Tensor`, *optional*):
@@ -610,18 +611,18 @@ class TextToVideoZeroPipeline(
                 The frequency at which the `callback` function is called. If not specified, the callback is called at
                 every step.
             motion_field_strength_x (`float`, *optional*, defaults to 12):
-                Strength of motion in generated video along x-axis. See the [paper](https://arxiv.org/abs/2303.13439),
-                Sect. 3.3.1.
+                Strength of motion in generated video along x-axis. See the
+                [paper](https://huggingface.co/papers/2303.13439), Sect. 3.3.1.
             motion_field_strength_y (`float`, *optional*, defaults to 12):
-                Strength of motion in generated video along y-axis. See the [paper](https://arxiv.org/abs/2303.13439),
-                Sect. 3.3.1.
+                Strength of motion in generated video along y-axis. See the
+                [paper](https://huggingface.co/papers/2303.13439), Sect. 3.3.1.
             t0 (`int`, *optional*, defaults to 44):
                 Timestep t0. Should be in the range [0, num_inference_steps - 1]. See the
-                [paper](https://arxiv.org/abs/2303.13439), Sect. 3.3.1.
+                [paper](https://huggingface.co/papers/2303.13439), Sect. 3.3.1.
             t1 (`int`, *optional*, defaults to 47):
                 Timestep t0. Should be in the range [t0 + 1, num_inference_steps - 1]. See the
-                [paper](https://arxiv.org/abs/2303.13439), Sect. 3.3.1.
-            frame_ids (`List[int]`, *optional*):
+                [paper](https://huggingface.co/papers/2303.13439), Sect. 3.3.1.
+            frame_ids (`list[int]`, *optional*):
                 Indexes of the frames that are being generated. This is used when generating longer videos
                 chunk-by-chunk.
 
@@ -663,7 +664,7 @@ class TextToVideoZeroPipeline(
         batch_size = 1 if isinstance(prompt, str) else len(prompt)
         device = self._execution_device
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
-        # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
+        # of the Imagen paper: https://huggingface.co/papers/2205.11487 . `guidance_scale = 1`
         # corresponds to doing no classifier free guidance.
         do_classifier_free_guidance = guidance_scale > 1.0
 
@@ -758,7 +759,7 @@ class TextToVideoZeroPipeline(
         # manually for max memory savings
         if hasattr(self, "final_offload_hook") and self.final_offload_hook is not None:
             self.unet.to("cpu")
-        torch.cuda.empty_cache()
+        empty_device_cache()
 
         if output_type == "latent":
             image = latents
@@ -797,7 +798,7 @@ class TextToVideoZeroPipeline(
     def prepare_extra_step_kwargs(self, generator, eta):
         # prepare extra kwargs for the scheduler step, since not all schedulers have the same signature
         # eta (η) is only used with the DDIMScheduler, it will be ignored for other schedulers.
-        # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
+        # eta corresponds to η in DDIM paper: https://huggingface.co/papers/2010.02502
         # and should be between [0, 1]
 
         accepts_eta = "eta" in set(inspect.signature(self.scheduler.step).parameters.keys())
@@ -819,16 +820,16 @@ class TextToVideoZeroPipeline(
         num_images_per_prompt,
         do_classifier_free_guidance,
         negative_prompt=None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        lora_scale: Optional[float] = None,
-        clip_skip: Optional[int] = None,
+        prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        lora_scale: float | None = None,
+        clip_skip: int | None = None,
     ):
         r"""
         Encodes the prompt into text encoder hidden states.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 prompt to be encoded
             device: (`torch.device`):
                 torch device
@@ -836,7 +837,7 @@ class TextToVideoZeroPipeline(
                 number of images that should be generated per prompt
             do_classifier_free_guidance (`bool`):
                 whether to use classifier free guidance or not
-            negative_prompt (`str` or `List[str]`, *optional*):
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts not to guide the image generation. If not defined, one has to pass
                 `negative_prompt_embeds` instead. Ignored when not using guidance (i.e., ignored if `guidance_scale` is
                 less than `1`).
@@ -935,7 +936,7 @@ class TextToVideoZeroPipeline(
 
         # get unconditional embeddings for classifier free guidance
         if do_classifier_free_guidance and negative_prompt_embeds is None:
-            uncond_tokens: List[str]
+            uncond_tokens: list[str]
             if negative_prompt is None:
                 uncond_tokens = [""] * batch_size
             elif prompt is not None and type(prompt) is not type(negative_prompt):

@@ -1,5 +1,5 @@
-# Copyright 2024 Salesforce.com, inc.
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 Salesforce.com, inc.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,24 +12,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional, Union
-
 import PIL.Image
 import torch
 from transformers import CLIPTokenizer
 
 from ...models import AutoencoderKL, ControlNetModel, UNet2DConditionModel
 from ...schedulers import PNDMScheduler
-from ...utils import (
-    is_torch_xla_available,
-    logging,
-    replace_example_docstring,
-)
+from ...utils import is_torch_xla_available, logging, replace_example_docstring
 from ...utils.torch_utils import randn_tensor
 from ..blip_diffusion.blip_image_processing import BlipImageProcessor
 from ..blip_diffusion.modeling_blip2 import Blip2QFormerModel
 from ..blip_diffusion.modeling_ctx_clip import ContextCLIPTextModel
-from ..pipeline_utils import DiffusionPipeline, ImagePipelineOutput
+from ..pipeline_utils import DeprecatedPipelineMixin, DiffusionPipeline, ImagePipelineOutput
 
 
 if is_torch_xla_available():
@@ -88,7 +82,7 @@ EXAMPLE_DOC_STRING = """
 """
 
 
-class BlipDiffusionControlNetPipeline(DiffusionPipeline):
+class BlipDiffusionControlNetPipeline(DeprecatedPipelineMixin, DiffusionPipeline):
     """
     Pipeline for Canny Edge based Controlled subject-driven generation using Blip Diffusion.
 
@@ -116,6 +110,7 @@ class BlipDiffusionControlNetPipeline(DiffusionPipeline):
             Position of the context token in the text encoder.
     """
 
+    _last_supported_version = "0.33.1"
     model_cpu_offload_seq = "qformer->text_encoder->unet->vae"
 
     def __init__(
@@ -129,8 +124,8 @@ class BlipDiffusionControlNetPipeline(DiffusionPipeline):
         controlnet: ControlNetModel,
         image_processor: BlipImageProcessor,
         ctx_begin_pos: int = 2,
-        mean: List[float] = None,
-        std: List[float] = None,
+        mean: list[float] = None,
+        std: list[float] = None,
     ):
         super().__init__()
 
@@ -149,7 +144,7 @@ class BlipDiffusionControlNetPipeline(DiffusionPipeline):
     def get_query_embeddings(self, input_image, src_subject):
         return self.qformer(image_input=input_image, text_input=src_subject, return_dict=False)
 
-    # from the original Blip Diffusion code, speciefies the target subject and augments the prompt by repeating it
+    # from the original Blip Diffusion code, specifies the target subject and augments the prompt by repeating it
     def _build_prompt(self, prompts, tgt_subjects, prompt_strength=1.0, prompt_reps=20):
         rv = []
         for prompt, tgt_subject in zip(prompts, tgt_subjects):
@@ -244,47 +239,47 @@ class BlipDiffusionControlNetPipeline(DiffusionPipeline):
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
         self,
-        prompt: List[str],
+        prompt: list[str],
         reference_image: PIL.Image.Image,
         condtioning_image: PIL.Image.Image,
-        source_subject_category: List[str],
-        target_subject_category: List[str],
-        latents: Optional[torch.Tensor] = None,
+        source_subject_category: list[str],
+        target_subject_category: list[str],
+        latents: torch.Tensor | None = None,
         guidance_scale: float = 7.5,
         height: int = 512,
         width: int = 512,
         num_inference_steps: int = 50,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        neg_prompt: Optional[str] = "",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        neg_prompt: str | None = "",
         prompt_strength: float = 1.0,
         prompt_reps: int = 20,
-        output_type: Optional[str] = "pil",
+        output_type: str | None = "pil",
         return_dict: bool = True,
     ):
         """
         Function invoked when calling the pipeline for generation.
 
         Args:
-            prompt (`List[str]`):
+            prompt (`list[str]`):
                 The prompt or prompts to guide the image generation.
             reference_image (`PIL.Image.Image`):
                 The reference image to condition the generation on.
             condtioning_image (`PIL.Image.Image`):
                 The conditioning canny edge image to condition the generation on.
-            source_subject_category (`List[str]`):
+            source_subject_category (`list[str]`):
                 The source subject category.
-            target_subject_category (`List[str]`):
+            target_subject_category (`list[str]`):
                 The target subject category.
             latents (`torch.Tensor`, *optional*):
                 Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for image
                 generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
-                tensor will ge generated by random sampling.
+                tensor will be generated by random sampling.
             guidance_scale (`float`, *optional*, defaults to 7.5):
-                Guidance scale as defined in [Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598).
-                `guidance_scale` is defined as `w` of equation 2. of [Imagen
-                Paper](https://arxiv.org/pdf/2205.11487.pdf). Guidance scale is enabled by setting `guidance_scale >
-                1`. Higher guidance scale encourages to generate images that are closely linked to the text `prompt`,
-                usually at the expense of lower image quality.
+                Guidance scale as defined in [Classifier-Free Diffusion
+                Guidance](https://huggingface.co/papers/2207.12598). `guidance_scale` is defined as `w` of equation 2.
+                of [Imagen Paper](https://huggingface.co/papers/2205.11487). Guidance scale is enabled by setting
+                `guidance_scale > 1`. Higher guidance scale encourages to generate images that are closely linked to
+                the text `prompt`, usually at the expense of lower image quality.
             height (`int`, *optional*, defaults to 512):
                 The height of the generated image.
             width (`int`, *optional*, defaults to 512):
@@ -294,7 +289,7 @@ class BlipDiffusionControlNetPipeline(DiffusionPipeline):
             num_inference_steps (`int`, *optional*, defaults to 50):
                 The number of denoising steps. More denoising steps usually lead to a higher quality image at the
                 expense of slower inference.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 One or a list of [torch generator(s)](https://pytorch.org/docs/stable/generated/torch.Generator.html)
                 to make generation deterministic.
             neg_prompt (`str`, *optional*, defaults to ""):

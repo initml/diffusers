@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import math
-from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -26,7 +25,7 @@ from ...utils.accelerate_utils import apply_forward_hook
 from ..activations import get_activation
 from ..modeling_outputs import AutoencoderKLOutput
 from ..modeling_utils import ModelMixin
-from .vae import DecoderOutput, DiagonalGaussianDistribution
+from .vae import AutoencoderMixin, DecoderOutput, DiagonalGaussianDistribution
 
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
@@ -37,10 +36,10 @@ class EasyAnimateCausalConv3d(nn.Conv3d):
         self,
         in_channels: int,
         out_channels: int,
-        kernel_size: Union[int, Tuple[int, ...]] = 3,
-        stride: Union[int, Tuple[int, ...]] = 1,
-        padding: Union[int, Tuple[int, ...]] = 1,
-        dilation: Union[int, Tuple[int, ...]] = 1,
+        kernel_size: int | tuple[int, ...] = 3,
+        stride: int | tuple[int, ...] = 1,
+        padding: int | tuple[int, ...] = 1,
+        dilation: int | tuple[int, ...] = 1,
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = "zeros",
@@ -428,7 +427,7 @@ class EasyAnimateMidBlock3d(nn.Module):
 
 class EasyAnimateEncoder(nn.Module):
     r"""
-    Causal encoder for 3D video-like data used in [EasyAnimate](https://arxiv.org/abs/2405.18991).
+    Causal encoder for 3D video-like data used in [EasyAnimate](https://huggingface.co/papers/2405.18991).
     """
 
     _supports_gradient_checkpointing = True
@@ -437,13 +436,13 @@ class EasyAnimateEncoder(nn.Module):
         self,
         in_channels: int = 3,
         out_channels: int = 8,
-        down_block_types: Tuple[str, ...] = (
+        down_block_types: tuple[str, ...] = (
             "SpatialDownBlock3D",
             "SpatialTemporalDownBlock3D",
             "SpatialTemporalDownBlock3D",
             "SpatialTemporalDownBlock3D",
         ),
-        block_out_channels: Tuple[int, ...] = [128, 256, 512, 512],
+        block_out_channels: tuple[int, ...] = [128, 256, 512, 512],
         layers_per_block: int = 2,
         norm_num_groups: int = 32,
         act_fn: str = "silu",
@@ -544,7 +543,7 @@ class EasyAnimateEncoder(nn.Module):
 
 class EasyAnimateDecoder(nn.Module):
     r"""
-    Causal decoder for 3D video-like data used in [EasyAnimate](https://arxiv.org/abs/2405.18991).
+    Causal decoder for 3D video-like data used in [EasyAnimate](https://huggingface.co/papers/2405.18991).
     """
 
     _supports_gradient_checkpointing = True
@@ -553,13 +552,13 @@ class EasyAnimateDecoder(nn.Module):
         self,
         in_channels: int = 8,
         out_channels: int = 3,
-        up_block_types: Tuple[str, ...] = (
+        up_block_types: tuple[str, ...] = (
             "SpatialUpBlock3D",
             "SpatialTemporalUpBlock3D",
             "SpatialTemporalUpBlock3D",
             "SpatialTemporalUpBlock3D",
         ),
-        block_out_channels: Tuple[int, ...] = [128, 256, 512, 512],
+        block_out_channels: tuple[int, ...] = [128, 256, 512, 512],
         layers_per_block: int = 2,
         norm_num_groups: int = 32,
         act_fn: str = "silu",
@@ -663,10 +662,10 @@ class EasyAnimateDecoder(nn.Module):
         return hidden_states
 
 
-class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
+class AutoencoderKLMagvit(ModelMixin, AutoencoderMixin, ConfigMixin):
     r"""
     A VAE model with KL loss for encoding images into latents and decoding latent representations into images. This
-    model is used in [EasyAnimate](https://arxiv.org/abs/2405.18991).
+    model is used in [EasyAnimate](https://huggingface.co/papers/2405.18991).
 
     This model inherits from [`ModelMixin`]. Check the superclass documentation for it's generic methods implemented
     for all models (such as downloading or saving).
@@ -680,14 +679,14 @@ class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
         in_channels: int = 3,
         latent_channels: int = 16,
         out_channels: int = 3,
-        block_out_channels: Tuple[int, ...] = [128, 256, 512, 512],
-        down_block_types: Tuple[str, ...] = [
+        block_out_channels: tuple[int, ...] = [128, 256, 512, 512],
+        down_block_types: tuple[str, ...] = [
             "SpatialDownBlock3D",
             "SpatialTemporalDownBlock3D",
             "SpatialTemporalDownBlock3D",
             "SpatialTemporalDownBlock3D",
         ],
-        up_block_types: Tuple[str, ...] = [
+        up_block_types: tuple[str, ...] = [
             "SpatialUpBlock3D",
             "SpatialTemporalUpBlock3D",
             "SpatialTemporalUpBlock3D",
@@ -771,12 +770,12 @@ class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
 
     def enable_tiling(
         self,
-        tile_sample_min_height: Optional[int] = None,
-        tile_sample_min_width: Optional[int] = None,
-        tile_sample_min_num_frames: Optional[int] = None,
-        tile_sample_stride_height: Optional[float] = None,
-        tile_sample_stride_width: Optional[float] = None,
-        tile_sample_stride_num_frames: Optional[float] = None,
+        tile_sample_min_height: int | None = None,
+        tile_sample_min_width: int | None = None,
+        tile_sample_min_num_frames: int | None = None,
+        tile_sample_stride_height: float | None = None,
+        tile_sample_stride_width: float | None = None,
+        tile_sample_stride_num_frames: float | None = None,
     ) -> None:
         r"""
         Enable tiled VAE decoding. When this option is enabled, the VAE will split the input tensor into tiles to
@@ -805,31 +804,10 @@ class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
         self.tile_sample_stride_width = tile_sample_stride_width or self.tile_sample_stride_width
         self.tile_sample_stride_num_frames = tile_sample_stride_num_frames or self.tile_sample_stride_num_frames
 
-    def disable_tiling(self) -> None:
-        r"""
-        Disable tiled VAE decoding. If `enable_tiling` was previously enabled, this method will go back to computing
-        decoding in one step.
-        """
-        self.use_tiling = False
-
-    def enable_slicing(self) -> None:
-        r"""
-        Enable sliced VAE decoding. When this option is enabled, the VAE will split the input tensor in slices to
-        compute decoding in several steps. This is useful to save some memory and allow larger batch sizes.
-        """
-        self.use_slicing = True
-
-    def disable_slicing(self) -> None:
-        r"""
-        Disable sliced VAE decoding. If `enable_slicing` was previously enabled, this method will go back to computing
-        decoding in one step.
-        """
-        self.use_slicing = False
-
     @apply_forward_hook
     def _encode(
         self, x: torch.Tensor, return_dict: bool = True
-    ) -> Union[AutoencoderKLOutput, Tuple[DiagonalGaussianDistribution]]:
+    ) -> AutoencoderKLOutput | tuple[DiagonalGaussianDistribution]:
         """
         Encode a batch of images into latents.
 
@@ -859,7 +837,7 @@ class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
     @apply_forward_hook
     def encode(
         self, x: torch.Tensor, return_dict: bool = True
-    ) -> Union[AutoencoderKLOutput, Tuple[DiagonalGaussianDistribution]]:
+    ) -> AutoencoderKLOutput | tuple[DiagonalGaussianDistribution]:
         """
         Encode a batch of images into latents.
 
@@ -884,10 +862,10 @@ class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
             return (posterior,)
         return AutoencoderKLOutput(latent_dist=posterior)
 
-    def _decode(self, z: torch.Tensor, return_dict: bool = True) -> Union[DecoderOutput, torch.Tensor]:
+    def _decode(self, z: torch.Tensor, return_dict: bool = True) -> DecoderOutput | torch.Tensor:
         batch_size, num_channels, num_frames, height, width = z.shape
         tile_latent_min_height = self.tile_sample_min_height // self.spatial_compression_ratio
-        tile_latent_min_width = self.tile_sample_stride_width // self.spatial_compression_ratio
+        tile_latent_min_width = self.tile_sample_min_width // self.spatial_compression_ratio
 
         if self.use_tiling and (z.shape[-1] > tile_latent_min_height or z.shape[-2] > tile_latent_min_width):
             return self.tiled_decode(z, return_dict=return_dict)
@@ -911,7 +889,7 @@ class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
         return DecoderOutput(sample=dec)
 
     @apply_forward_hook
-    def decode(self, z: torch.Tensor, return_dict: bool = True) -> Union[DecoderOutput, torch.Tensor]:
+    def decode(self, z: torch.Tensor, return_dict: bool = True) -> DecoderOutput | torch.Tensor:
         """
         Decode a batch of images.
 
@@ -1004,7 +982,7 @@ class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
         moments = torch.cat(result_rows, dim=3)[:, :, :, :latent_height, :latent_width]
         return moments
 
-    def tiled_decode(self, z: torch.Tensor, return_dict: bool = True) -> Union[DecoderOutput, torch.Tensor]:
+    def tiled_decode(self, z: torch.Tensor, return_dict: bool = True) -> DecoderOutput | torch.Tensor:
         batch_size, num_channels, num_frames, height, width = z.shape
         sample_height = height * self.spatial_compression_ratio
         sample_width = width * self.spatial_compression_ratio
@@ -1070,8 +1048,8 @@ class AutoencoderKLMagvit(ModelMixin, ConfigMixin):
         sample: torch.Tensor,
         sample_posterior: bool = False,
         return_dict: bool = True,
-        generator: Optional[torch.Generator] = None,
-    ) -> Union[DecoderOutput, torch.Tensor]:
+        generator: torch.Generator | None = None,
+    ) -> DecoderOutput | torch.Tensor:
         r"""
         Args:
             sample (`torch.Tensor`): Input sample.

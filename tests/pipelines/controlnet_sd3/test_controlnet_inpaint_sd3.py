@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,14 @@ import unittest
 
 import numpy as np
 import torch
-from transformers import AutoTokenizer, CLIPTextConfig, CLIPTextModelWithProjection, CLIPTokenizer, T5EncoderModel
+from transformers import (
+    AutoConfig,
+    AutoTokenizer,
+    CLIPTextConfig,
+    CLIPTextModelWithProjection,
+    CLIPTokenizer,
+    T5EncoderModel,
+)
 
 from diffusers import (
     AutoencoderKL,
@@ -26,12 +33,9 @@ from diffusers import (
     StableDiffusion3ControlNetInpaintingPipeline,
 )
 from diffusers.models import SD3ControlNetModel
-from diffusers.utils.testing_utils import (
-    enable_full_determinism,
-    torch_device,
-)
 from diffusers.utils.torch_utils import randn_tensor
 
+from ...testing_utils import enable_full_determinism, torch_device
 from ..test_pipelines_common import PipelineTesterMixin
 
 
@@ -103,7 +107,8 @@ class StableDiffusion3ControlInpaintNetPipelineFastTests(unittest.TestCase, Pipe
         text_encoder_2 = CLIPTextModelWithProjection(clip_text_encoder_config)
 
         torch.manual_seed(0)
-        text_encoder_3 = T5EncoderModel.from_pretrained("hf-internal-testing/tiny-random-t5")
+        config = AutoConfig.from_pretrained("hf-internal-testing/tiny-random-t5")
+        text_encoder_3 = T5EncoderModel(config)
 
         tokenizer = CLIPTokenizer.from_pretrained("hf-internal-testing/tiny-random-clip")
         tokenizer_2 = CLIPTokenizer.from_pretrained("hf-internal-testing/tiny-random-clip")
@@ -194,9 +199,9 @@ class StableDiffusion3ControlInpaintNetPipelineFastTests(unittest.TestCase, Pipe
             [0.51708984, 0.7421875, 0.4580078, 0.6435547, 0.65625, 0.43603516, 0.5151367, 0.65722656, 0.60839844]
         )
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f"Expected: {expected_slice}, got: {image_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-2, (
+            f"Expected: {expected_slice}, got: {image_slice.flatten()}"
+        )
 
     @unittest.skip("xFormersAttnProcessor does not work with SD3 Joint Attention")
     def test_xformers_attention_forwardGenerator_pass(self):

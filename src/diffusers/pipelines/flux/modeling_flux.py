@@ -1,4 +1,4 @@
-# Copyright 2024 Black Forest Labs and The HuggingFace Team. All rights reserved.
+# Copyright 2025 Black Forest Labs and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
 
 
 from dataclasses import dataclass
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -26,7 +25,7 @@ from ...utils import BaseOutput
 
 @dataclass
 class ReduxImageEncoderOutput(BaseOutput):
-    image_embeds: Optional[torch.Tensor] = None
+    image_embeds: torch.Tensor | None = None
 
 
 class ReduxImageEncoder(ModelMixin, ConfigMixin):

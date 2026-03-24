@@ -1,4 +1,4 @@
-# Copyright 2024 Kakao Brain and The HuggingFace Team. All rights reserved.
+# Copyright 2025 Kakao Brain and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import inspect
-from typing import List, Optional, Union
 
 import PIL.Image
 import torch
@@ -29,7 +28,7 @@ from ...models import UNet2DConditionModel, UNet2DModel
 from ...schedulers import UnCLIPScheduler
 from ...utils import is_torch_xla_available, logging
 from ...utils.torch_utils import randn_tensor
-from ..pipeline_utils import DiffusionPipeline, ImagePipelineOutput
+from ..pipeline_utils import DeprecatedPipelineMixin, DiffusionPipeline, ImagePipelineOutput
 from .text_proj import UnCLIPTextProjModel
 
 
@@ -43,7 +42,7 @@ else:
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
-class UnCLIPImageVariationPipeline(DiffusionPipeline):
+class UnCLIPImageVariationPipeline(DeprecatedPipelineMixin, DiffusionPipeline):
     """
     Pipeline to generate image variations from an input image using UnCLIP.
 
@@ -73,6 +72,7 @@ class UnCLIPImageVariationPipeline(DiffusionPipeline):
             Scheduler used in the super resolution denoising process (a modified [`DDPMScheduler`]).
     """
 
+    _last_supported_version = "0.33.1"
     decoder: UNet2DConditionModel
     text_proj: UnCLIPTextProjModel
     text_encoder: CLIPTextModelWithProjection
@@ -189,7 +189,7 @@ class UnCLIPImageVariationPipeline(DiffusionPipeline):
 
         return prompt_embeds, text_encoder_hidden_states, text_mask
 
-    def _encode_image(self, image, device, num_images_per_prompt, image_embeddings: Optional[torch.Tensor] = None):
+    def _encode_image(self, image, device, num_images_per_prompt, image_embeddings: torch.Tensor | None = None):
         dtype = next(self.image_encoder.parameters()).dtype
 
         if image_embeddings is None:
@@ -206,23 +206,23 @@ class UnCLIPImageVariationPipeline(DiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
-        image: Optional[Union[PIL.Image.Image, List[PIL.Image.Image], torch.Tensor]] = None,
+        image: PIL.Image.Image | list[PIL.Image.Image] | torch.Tensor | None = None,
         num_images_per_prompt: int = 1,
         decoder_num_inference_steps: int = 25,
         super_res_num_inference_steps: int = 7,
-        generator: Optional[torch.Generator] = None,
-        decoder_latents: Optional[torch.Tensor] = None,
-        super_res_latents: Optional[torch.Tensor] = None,
-        image_embeddings: Optional[torch.Tensor] = None,
+        generator: torch.Generator | None = None,
+        decoder_latents: torch.Tensor | None = None,
+        super_res_latents: torch.Tensor | None = None,
+        image_embeddings: torch.Tensor | None = None,
         decoder_guidance_scale: float = 8.0,
-        output_type: Optional[str] = "pil",
+        output_type: str | None = "pil",
         return_dict: bool = True,
     ):
         """
         The call function to the pipeline for generation.
 
         Args:
-            image (`PIL.Image.Image` or `List[PIL.Image.Image]` or `torch.Tensor`):
+            image (`PIL.Image.Image` or `list[PIL.Image.Image]` or `torch.Tensor`):
                 `Image` or tensor representing an image batch to be used as the starting point. If you provide a
                 tensor, it needs to be compatible with the [`CLIPImageProcessor`]
                 [configuration](https://huggingface.co/fusing/karlo-image-variations-diffusers/blob/main/feature_extractor/preprocessor_config.json).

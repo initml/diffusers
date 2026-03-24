@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,12 +18,15 @@ import random
 import unittest
 
 import numpy as np
+import pytest
 import torch
 from transformers import XLMRobertaTokenizerFast
 
 from diffusers import DDIMScheduler, KandinskyPipeline, KandinskyPriorPipeline, UNet2DConditionModel, VQModel
 from diffusers.pipelines.kandinsky.text_encoder import MCLIPConfig, MultilingualCLIP
-from diffusers.utils.testing_utils import (
+from diffusers.utils import is_transformers_version
+
+from ...testing_utils import (
     backend_empty_cache,
     enable_full_determinism,
     floats_tensor,
@@ -32,7 +35,6 @@ from diffusers.utils.testing_utils import (
     slow,
     torch_device,
 )
-
 from ..test_pipelines_common import PipelineTesterMixin, assert_mean_pixel_difference
 
 
@@ -215,6 +217,11 @@ class KandinskyPipelineFastTests(PipelineTesterMixin, unittest.TestCase):
         dummy = Dummies()
         return dummy.get_dummy_inputs(device=device, seed=seed)
 
+    @pytest.mark.xfail(
+        condition=is_transformers_version(">=", "4.56.2"),
+        reason="Latest transformers changes the slices",
+        strict=False,
+    )
     def test_kandinsky(self):
         device = "cpu"
 
@@ -240,12 +247,12 @@ class KandinskyPipelineFastTests(PipelineTesterMixin, unittest.TestCase):
 
         expected_slice = np.array([1.0000, 1.0000, 0.2766, 1.0000, 0.5447, 0.1737, 1.0000, 0.4316, 0.9024])
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
-        assert (
-            np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        )
+        assert np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        )
 
     @require_torch_accelerator
     def test_offloads(self):

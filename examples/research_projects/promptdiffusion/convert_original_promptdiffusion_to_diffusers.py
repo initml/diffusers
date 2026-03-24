@@ -59,6 +59,7 @@ from diffusers.schedulers import (
     UnCLIPScheduler,
 )
 from diffusers.utils import is_accelerate_available, logging
+from diffusers.utils.constants import DIFFUSERS_REQUEST_TIMEOUT
 
 
 if is_accelerate_available():
@@ -1109,7 +1110,7 @@ def stable_unclip_image_encoder(original_config, local_files_only=False):
 
 
 def stable_unclip_image_noising_components(
-    original_config, clip_stats_path: Optional[str] = None, device: Optional[str] = None
+    original_config, clip_stats_path: str | None = None, device: str | None = None
 ):
     """
     Returns the noising components for the img2img and txt2img unclip pipelines.
@@ -1266,9 +1267,9 @@ def download_from_original_stable_diffusion_ckpt(
     upcast_attention: Optional[bool] = None,
     device: str = None,
     from_safetensors: bool = False,
-    stable_unclip: Optional[str] = None,
-    stable_unclip_prior: Optional[str] = None,
-    clip_stats_path: Optional[str] = None,
+    stable_unclip: str | None = None,
+    stable_unclip_prior: str | None = None,
+    clip_stats_path: str | None = None,
     controlnet: Optional[bool] = None,
     adapter: Optional[bool] = None,
     load_safety_checker: bool = True,
@@ -1435,7 +1436,7 @@ def download_from_original_stable_diffusion_ckpt(
             config_url = "https://raw.githubusercontent.com/Stability-AI/stablediffusion/main/configs/stable-diffusion/x4-upscaling.yaml"
 
         if config_url is not None:
-            original_config_file = BytesIO(requests.get(config_url).content)
+            original_config_file = BytesIO(requests.get(config_url, timeout=DIFFUSERS_REQUEST_TIMEOUT).content)
         else:
             with open(original_config_file, "r") as f:
                 original_config_file = f.read()

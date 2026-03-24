@@ -1,4 +1,4 @@
-# Copyright 2024 ETH Zurich Computer Vision Lab and The HuggingFace Team. All rights reserved.
+# Copyright 2025 ETH Zurich Computer Vision Lab and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import PIL.Image
@@ -30,7 +28,7 @@ logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
 # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_img2img.preprocess
-def _preprocess_image(image: Union[List, PIL.Image.Image, torch.Tensor]):
+def _preprocess_image(image: list | PIL.Image.Image | torch.Tensor):
     deprecation_message = "The preprocess method is deprecated and will be removed in diffusers 1.0.0. Please use VaeImageProcessor.preprocess(...) instead"
     deprecate("preprocess", "1.0.0", deprecation_message, standard_warn=False)
     if isinstance(image, torch.Tensor):
@@ -53,7 +51,7 @@ def _preprocess_image(image: Union[List, PIL.Image.Image, torch.Tensor]):
     return image
 
 
-def _preprocess_mask(mask: Union[List, PIL.Image.Image, torch.Tensor]):
+def _preprocess_mask(mask: list | PIL.Image.Image | torch.Tensor):
     if isinstance(mask, torch.Tensor):
         return mask
     elif isinstance(mask, PIL.Image.Image):
@@ -98,16 +96,16 @@ class RePaintPipeline(DiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
-        image: Union[torch.Tensor, PIL.Image.Image],
-        mask_image: Union[torch.Tensor, PIL.Image.Image],
+        image: torch.Tensor | PIL.Image.Image,
+        mask_image: torch.Tensor | PIL.Image.Image,
         num_inference_steps: int = 250,
         eta: float = 0.0,
         jump_length: int = 10,
         jump_n_sample: int = 10,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        output_type: Optional[str] = "pil",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
-    ) -> Union[ImagePipelineOutput, Tuple]:
+    ) -> ImagePipelineOutput | tuple:
         r"""
         The call function to the pipeline for generation.
 
@@ -124,10 +122,11 @@ class RePaintPipeline(DiffusionPipeline):
                 DDIM and 1.0 is the DDPM scheduler.
             jump_length (`int`, *optional*, defaults to 10):
                 The number of steps taken forward in time before going backward in time for a single jump ("j" in
-                RePaint paper). Take a look at Figure 9 and 10 in the [paper](https://arxiv.org/pdf/2201.09865.pdf).
+                RePaint paper). Take a look at Figure 9 and 10 in the
+                [paper](https://huggingface.co/papers/2201.09865).
             jump_n_sample (`int`, *optional*, defaults to 10):
                 The number of times to make a forward time jump for a given chosen time sample. Take a look at Figure 9
-                and 10 in the [paper](https://arxiv.org/pdf/2201.09865.pdf).
+                and 10 in the [paper](https://huggingface.co/papers/2201.09865).
             generator (`torch.Generator`, *optional*):
                 A [`torch.Generator`](https://pytorch.org/docs/stable/generated/torch.Generator.html) to make
                 generation deterministic.

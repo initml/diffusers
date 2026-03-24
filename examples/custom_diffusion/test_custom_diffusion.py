@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +17,9 @@ import logging
 import os
 import sys
 import tempfile
+import unittest
+
+from diffusers.utils import is_transformers_version
 
 
 sys.path.append("..")
@@ -30,6 +33,7 @@ stream_handler = logging.StreamHandler(sys.stdout)
 logger.addHandler(stream_handler)
 
 
+@unittest.skipIf(is_transformers_version(">=", "4.57.5"), "Size mismatch")
 class CustomDiffusion(ExamplesTestsAccelerate):
     def test_custom_diffusion(self):
         with tempfile.TemporaryDirectory() as tmpdir:

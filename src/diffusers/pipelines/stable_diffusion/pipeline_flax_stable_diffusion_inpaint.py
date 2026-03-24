@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
 
 import warnings
 from functools import partial
-from typing import Dict, List, Optional, Union
 
 import jax
 import jax.numpy as jnp
@@ -103,11 +102,7 @@ class FlaxStableDiffusionInpaintPipeline(FlaxDiffusionPipeline):
     r"""
     Flax-based pipeline for text-guided image inpainting using Stable Diffusion.
 
-    <Tip warning={true}>
-
-    🧪 This is an experimental feature!
-
-    </Tip>
+    > [!WARNING] > 🧪 This is an experimental feature!
 
     This model inherits from [`FlaxDiffusionPipeline`]. Check the superclass documentation for the generic methods
     implemented for all pipelines (downloading, saving, running on a particular device, etc.).
@@ -139,9 +134,7 @@ class FlaxStableDiffusionInpaintPipeline(FlaxDiffusionPipeline):
         text_encoder: FlaxCLIPTextModel,
         tokenizer: CLIPTokenizer,
         unet: FlaxUNet2DConditionModel,
-        scheduler: Union[
-            FlaxDDIMScheduler, FlaxPNDMScheduler, FlaxLMSDiscreteScheduler, FlaxDPMSolverMultistepScheduler
-        ],
+        scheduler: FlaxDDIMScheduler | FlaxPNDMScheduler | FlaxLMSDiscreteScheduler | FlaxDPMSolverMultistepScheduler,
         safety_checker: FlaxStableDiffusionSafetyChecker,
         feature_extractor: CLIPImageProcessor,
         dtype: jnp.dtype = jnp.float32,
@@ -197,9 +190,9 @@ class FlaxStableDiffusionInpaintPipeline(FlaxDiffusionPipeline):
 
     def prepare_inputs(
         self,
-        prompt: Union[str, List[str]],
-        image: Union[Image.Image, List[Image.Image]],
-        mask: Union[Image.Image, List[Image.Image]],
+        prompt: str | list[str],
+        image: Image.Image | list[Image.Image],
+        mask: Image.Image | list[Image.Image],
     ):
         if not isinstance(prompt, (str, list)):
             raise ValueError(f"`prompt` has to be of type `str` or `list` but is {type(prompt)}")
@@ -273,14 +266,14 @@ class FlaxStableDiffusionInpaintPipeline(FlaxDiffusionPipeline):
         prompt_ids: jnp.ndarray,
         mask: jnp.ndarray,
         masked_image: jnp.ndarray,
-        params: Union[Dict, FrozenDict],
+        params: dict | FrozenDict,
         prng_seed: jax.Array,
         num_inference_steps: int,
         height: int,
         width: int,
         guidance_scale: float,
-        latents: Optional[jnp.ndarray] = None,
-        neg_prompt_ids: Optional[jnp.ndarray] = None,
+        latents: jnp.ndarray | None = None,
+        neg_prompt_ids: jnp.ndarray | None = None,
     ):
         if height % 8 != 0 or width % 8 != 0:
             raise ValueError(f"`height` and `width` have to be divisible by 8 but are {height} and {width}.")
@@ -335,7 +328,7 @@ class FlaxStableDiffusionInpaintPipeline(FlaxDiffusionPipeline):
                 f"Incorrect configuration settings! The config of `pipeline.unet`: {self.unet.config} expects"
                 f" {self.unet.config.in_channels} but received `num_channels_latents`: {num_channels_latents} +"
                 f" `num_channels_mask`: {num_channels_mask} + `num_channels_masked_image`: {num_channels_masked_image}"
-                f" = {num_channels_latents+num_channels_masked_image+num_channels_mask}. Please verify the config of"
+                f" = {num_channels_latents + num_channels_masked_image + num_channels_mask}. Please verify the config of"
                 " `pipeline.unet` or your `mask_image` or `image` input."
             )
 
@@ -401,12 +394,12 @@ class FlaxStableDiffusionInpaintPipeline(FlaxDiffusionPipeline):
         prompt_ids: jnp.ndarray,
         mask: jnp.ndarray,
         masked_image: jnp.ndarray,
-        params: Union[Dict, FrozenDict],
+        params: dict | FrozenDict,
         prng_seed: jax.Array,
         num_inference_steps: int = 50,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        guidance_scale: Union[float, jnp.ndarray] = 7.5,
+        height: int | None = None,
+        width: int | None = None,
+        guidance_scale: float | jnp.ndarray = 7.5,
         latents: jnp.ndarray = None,
         neg_prompt_ids: jnp.ndarray = None,
         return_dict: bool = True,
@@ -416,7 +409,7 @@ class FlaxStableDiffusionInpaintPipeline(FlaxDiffusionPipeline):
         Function invoked when calling the pipeline for generation.
 
         Args:
-            prompt (`str` or `List[str]`):
+            prompt (`str` or `list[str]`):
                 The prompt or prompts to guide image generation.
             height (`int`, *optional*, defaults to `self.unet.config.sample_size * self.vae_scale_factor`):
                 The height in pixels of the generated image.
@@ -435,12 +428,8 @@ class FlaxStableDiffusionInpaintPipeline(FlaxDiffusionPipeline):
             jit (`bool`, defaults to `False`):
                 Whether to run `pmap` versions of the generation and safety scoring functions.
 
-                    <Tip warning={true}>
-
-                    This argument exists because `__call__` is not yet end-to-end pmap-able. It will be removed in a
-                    future release.
-
-                    </Tip>
+                    > [!WARNING] > This argument exists because `__call__` is not yet end-to-end pmap-able. It will be
+                    removed in a > future release.
 
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether or not to return a [`~pipelines.stable_diffusion.FlaxStableDiffusionPipelineOutput`] instead of

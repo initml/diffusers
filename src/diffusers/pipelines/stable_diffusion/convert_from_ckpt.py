@@ -17,7 +17,6 @@
 import re
 from contextlib import nullcontext
 from io import BytesIO
-from typing import Dict, Optional, Union
 
 import requests
 import torch
@@ -52,6 +51,8 @@ from ...schedulers import (
     UnCLIPScheduler,
 )
 from ...utils import is_accelerate_available, logging
+from ...utils.constants import DIFFUSERS_REQUEST_TIMEOUT
+from ...utils.torch_utils import get_device
 from ..latent_diffusion.pipeline_latent_diffusion import LDMBertConfig, LDMBertModel
 from ..paint_by_example import PaintByExampleImageEncoder
 from ..pipeline_utils import DiffusionPipeline
@@ -349,8 +350,14 @@ def create_vae_diffusers_config(original_config, image_size: int):
     _ = original_config["model"]["params"]["first_stage_config"]["params"]["embed_dim"]
 
     block_out_channels = [vae_params["ch"] * mult for mult in vae_params["ch_mult"]]
-    down_block_types = ["DownEncoderBlock2D"] * len(block_out_channels)
-    up_block_types = ["UpDecoderBlock2D"] * len(block_out_channels)
+    down_block_types = [
+        "DownEncoderBlock2D" if image_size // 2**i not in vae_params["attn_resolutions"] else "AttnDownEncoderBlock2D"
+        for i, _ in enumerate(block_out_channels)
+    ]
+    up_block_types = [
+        "UpDecoderBlock2D" if image_size // 2**i not in vae_params["attn_resolutions"] else "AttnUpDecoderBlock2D"
+        for i, _ in enumerate(block_out_channels)
+    ][::-1]
 
     config = {
         "sample_size": image_size,
@@ -1041,7 +1048,7 @@ def stable_unclip_image_encoder(original_config, local_files_only=False):
 
 
 def stable_unclip_image_noising_components(
-    original_config, clip_stats_path: Optional[str] = None, device: Optional[str] = None
+    original_config, clip_stats_path: str | None = None, device: str | None = None
 ):
     """
     Returns the noising components for the img2img and txt2img unclip pipelines.
@@ -1136,25 +1143,25 @@ def convert_controlnet_checkpoint(
 
 
 def download_from_original_stable_diffusion_ckpt(
-    checkpoint_path_or_dict: Union[str, Dict[str, torch.Tensor]],
+    checkpoint_path_or_dict: str | dict[str, torch.Tensor],
     original_config_file: str = None,
-    image_size: Optional[int] = None,
+    image_size: int | None = None,
     prediction_type: str = None,
     model_type: str = None,
     extract_ema: bool = False,
     scheduler_type: str = "pndm",
-    num_in_channels: Optional[int] = None,
-    upcast_attention: Optional[bool] = None,
+    num_in_channels: int | None = None,
+    upcast_attention: bool | None = None,
     device: str = None,
     from_safetensors: bool = False,
-    stable_unclip: Optional[str] = None,
-    stable_unclip_prior: Optional[str] = None,
-    clip_stats_path: Optional[str] = None,
-    controlnet: Optional[bool] = None,
-    adapter: Optional[bool] = None,
+    stable_unclip: str | None = None,
+    stable_unclip_prior: str | None = None,
+    clip_stats_path: str | None = None,
+    controlnet: bool | None = None,
+    adapter: bool | None = None,
     load_safety_checker: bool = True,
-    safety_checker: Optional[StableDiffusionSafetyChecker] = None,
-    feature_extractor: Optional[AutoFeatureExtractor] = None,
+    safety_checker: StableDiffusionSafetyChecker | None = None,
+    feature_extractor: AutoFeatureExtractor | None = None,
     pipeline_class: DiffusionPipeline = None,
     local_files_only=False,
     vae_path=None,
@@ -1229,7 +1236,7 @@ def download_from_original_stable_diffusion_ckpt(
             [CLIPTokenizer](https://huggingface.co/docs/transformers/v4.21.0/en/model_doc/clip#transformers.CLIPTokenizer)
             to use. If this parameter is `None`, the function will load a new instance of [CLIPTokenizer] by itself, if
             needed.
-        config_files (`Dict[str, str]`, *optional*, defaults to `None`):
+        config_files (`dict[str, str]`, *optional*, defaults to `None`):
             A dictionary mapping from config file names to their contents. If this parameter is `None`, the function
             will load the config files by itself, if needed. Valid keys are:
                 - `v1`: Config file for Stable Diffusion v1
@@ -1265,7 +1272,7 @@ def download_from_original_stable_diffusion_ckpt(
             checkpoint = safe_load(checkpoint_path_or_dict, device="cpu")
         else:
             if device is None:
-                device = "cuda" if torch.cuda.is_available() else "cpu"
+                device = get_device()
                 checkpoint = torch.load(checkpoint_path_or_dict, map_location=device)
             else:
                 checkpoint = torch.load(checkpoint_path_or_dict, map_location=device)
@@ -1324,7 +1331,7 @@ def download_from_original_stable_diffusion_ckpt(
             config_url = "https://raw.githubusercontent.com/Stability-AI/stablediffusion/main/configs/stable-diffusion/x4-upscaling.yaml"
 
         if config_url is not None:
-            original_config_file = BytesIO(requests.get(config_url).content)
+            original_config_file = BytesIO(requests.get(config_url, timeout=DIFFUSERS_REQUEST_TIMEOUT).content)
         else:
             with open(original_config_file, "r") as f:
                 original_config_file = f.read()
@@ -1819,12 +1826,12 @@ def download_controlnet_from_original_ckpt(
     original_config_file: str,
     image_size: int = 512,
     extract_ema: bool = False,
-    num_in_channels: Optional[int] = None,
-    upcast_attention: Optional[bool] = None,
+    num_in_channels: int | None = None,
+    upcast_attention: bool | None = None,
     device: str = None,
     from_safetensors: bool = False,
-    use_linear_projection: Optional[bool] = None,
-    cross_attention_dim: Optional[bool] = None,
+    use_linear_projection: bool | None = None,
+    cross_attention_dim: bool | None = None,
 ) -> DiffusionPipeline:
     if from_safetensors:
         from safetensors import safe_open
@@ -1835,7 +1842,7 @@ def download_controlnet_from_original_ckpt(
                 checkpoint[key] = f.get_tensor(key)
     else:
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = get_device()
             checkpoint = torch.load(checkpoint_path, map_location=device)
         else:
             checkpoint = torch.load(checkpoint_path, map_location=device)

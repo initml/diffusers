@@ -63,7 +63,7 @@ def get_indent(line: str) -> str:
 
 
 def split_code_in_indented_blocks(
-    code: str, indent_level: str = "", start_prompt: Optional[str] = None, end_prompt: Optional[str] = None
+    code: str, indent_level: str = "", start_prompt: str | None = None, end_prompt: str | None = None
 ) -> List[str]:
     """
     Split some code into its indented blocks, starting at a given level.
@@ -252,7 +252,7 @@ def sort_imports(file: str, check_only: bool = True):
         code, start_prompt="_import_structure = {", end_prompt="if TYPE_CHECKING:"
     )
 
-    # We ignore block 0 (everything untils start_prompt) and the last block (everything after end_prompt).
+    # We ignore block 0 (everything until start_prompt) and the last block (everything after end_prompt).
     for block_idx in range(1, len(main_blocks) - 1):
         # Check if the block contains some `_import_structure`s thingy to sort.
         block = main_blocks[block_idx]

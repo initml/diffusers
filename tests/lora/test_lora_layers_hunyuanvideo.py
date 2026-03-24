@@ -1,4 +1,4 @@
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ import sys
 import unittest
 
 import numpy as np
-import pytest
 import torch
 from transformers import CLIPTextModel, CLIPTokenizer, LlamaModel, LlamaTokenizerFast
 
@@ -27,20 +26,24 @@ from diffusers import (
     HunyuanVideoPipeline,
     HunyuanVideoTransformer3DModel,
 )
-from diffusers.utils.testing_utils import (
+
+from ..testing_utils import (
+    Expectations,
+    backend_empty_cache,
     floats_tensor,
     nightly,
     numpy_cosine_similarity_distance,
-    require_big_gpu_with_torch_cuda,
+    require_big_accelerator,
     require_peft_backend,
-    require_torch_gpu,
+    require_torch_accelerator,
     skip_mps,
+    torch_device,
 )
 
 
 sys.path.append(".")
 
-from utils import PeftLoraLoaderMixinTests  # noqa: E402
+from .utils import PeftLoraLoaderMixinTests  # noqa: E402
 
 
 @require_peft_backend
@@ -48,7 +51,6 @@ from utils import PeftLoraLoaderMixinTests  # noqa: E402
 class HunyuanVideoLoRATests(unittest.TestCase, PeftLoraLoaderMixinTests):
     pipeline_class = HunyuanVideoPipeline
     scheduler_cls = FlowMatchEulerDiscreteScheduler
-    scheduler_classes = [FlowMatchEulerDiscreteScheduler]
     scheduler_kwargs = {}
 
     transformer_kwargs = {
@@ -115,6 +117,8 @@ class HunyuanVideoLoRATests(unittest.TestCase, PeftLoraLoaderMixinTests):
         "text_encoder_2",
     )
 
+    supports_text_encoder_loras = False
+
     @property
     def output_shape(self):
         return (1, 9, 32, 32, 3)
@@ -170,32 +174,11 @@ class HunyuanVideoLoRATests(unittest.TestCase, PeftLoraLoaderMixinTests):
     def test_modify_padding_mode(self):
         pass
 
-    @unittest.skip("Text encoder LoRA is not supported in HunyuanVideo.")
-    def test_simple_inference_with_partial_text_lora(self):
-        pass
-
-    @unittest.skip("Text encoder LoRA is not supported in HunyuanVideo.")
-    def test_simple_inference_with_text_lora(self):
-        pass
-
-    @unittest.skip("Text encoder LoRA is not supported in HunyuanVideo.")
-    def test_simple_inference_with_text_lora_and_scale(self):
-        pass
-
-    @unittest.skip("Text encoder LoRA is not supported in HunyuanVideo.")
-    def test_simple_inference_with_text_lora_fused(self):
-        pass
-
-    @unittest.skip("Text encoder LoRA is not supported in HunyuanVideo.")
-    def test_simple_inference_with_text_lora_save_load(self):
-        pass
-
 
 @nightly
-@require_torch_gpu
+@require_torch_accelerator
 @require_peft_backend
-@require_big_gpu_with_torch_cuda
-@pytest.mark.big_gpu_with_torch_cuda
+@require_big_accelerator
 class HunyuanVideoLoRAIntegrationTests(unittest.TestCase):
     """internal note: The integration slices were obtained on DGX.
 
@@ -210,7 +193,7 @@ class HunyuanVideoLoRAIntegrationTests(unittest.TestCase):
         super().setUp()
 
         gc.collect()
-        torch.cuda.empty_cache()
+        backend_empty_cache(torch_device)
 
         model_id = "hunyuanvideo-community/HunyuanVideo"
         transformer = HunyuanVideoTransformer3DModel.from_pretrained(
@@ -218,13 +201,13 @@ class HunyuanVideoLoRAIntegrationTests(unittest.TestCase):
         )
         self.pipeline = HunyuanVideoPipeline.from_pretrained(
             model_id, transformer=transformer, torch_dtype=torch.float16
-        ).to("cuda")
+        ).to(torch_device)
 
     def tearDown(self):
         super().tearDown()
 
         gc.collect()
-        torch.cuda.empty_cache()
+        backend_empty_cache(torch_device)
 
     def test_original_format_cseti(self):
         self.pipeline.load_lora_weights(
@@ -249,8 +232,14 @@ class HunyuanVideoLoRAIntegrationTests(unittest.TestCase):
         out_slice = np.concatenate((out[:8], out[-8:]))
 
         # fmt: off
-        expected_slice = np.array([0.1013, 0.1924, 0.0078, 0.1021, 0.1929, 0.0078, 0.1023, 0.1919, 0.7402, 0.104, 0.4482, 0.7354, 0.0925, 0.4382, 0.7275, 0.0815])
+        expected_slices = Expectations(
+            {
+                ("cuda", 7): np.array([0.1013, 0.1924, 0.0078, 0.1021, 0.1929, 0.0078, 0.1023, 0.1919, 0.7402, 0.104, 0.4482, 0.7354, 0.0925, 0.4382, 0.7275, 0.0815]),
+                ("xpu", 3): np.array([0.1013, 0.1924, 0.0078, 0.1021, 0.1929, 0.0078, 0.1023, 0.1919, 0.7402, 0.104, 0.4482, 0.7354, 0.0925, 0.4382, 0.7275, 0.0815]),
+            }
+        )
         # fmt: on
+        expected_slice = expected_slices.get_expectation()
 
         max_diff = numpy_cosine_similarity_distance(expected_slice.flatten(), out_slice)
 

@@ -1,4 +1,4 @@
-# Copyright 2024 Open AI and The HuggingFace Team. All rights reserved.
+# Copyright 2025 Open AI and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Tuple
 
 import numpy as np
 import torch
@@ -33,7 +32,7 @@ class DifferentiableProjectiveCamera:
     height: int
     x_fov: float
     y_fov: float
-    shape: Tuple[int]
+    shape: tuple[int]
 
     def __post_init__(self):
         assert self.x.shape[0] == self.y.shape[0] == self.z.shape[0] == self.origin.shape[0]

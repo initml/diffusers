@@ -17,13 +17,14 @@ https://github.com/huggingface/transformers/blob/c409cd81777fb27aadc043ed3d8339d
 """
 
 import warnings
-from typing import Dict, Optional, Union
 
 from .bitsandbytes import BnB4BitDiffusersQuantizer, BnB8BitDiffusersQuantizer
 from .gguf import GGUFQuantizer
+from .modelopt import NVIDIAModelOptQuantizer
 from .quantization_config import (
     BitsAndBytesConfig,
     GGUFQuantizationConfig,
+    NVIDIAModelOptConfig,
     QuantizationConfigMixin,
     QuantizationMethod,
     QuantoConfig,
@@ -39,6 +40,7 @@ AUTO_QUANTIZER_MAPPING = {
     "gguf": GGUFQuantizer,
     "quanto": QuantoQuantizer,
     "torchao": TorchAoHfQuantizer,
+    "modelopt": NVIDIAModelOptQuantizer,
 }
 
 AUTO_QUANTIZATION_CONFIG_MAPPING = {
@@ -47,6 +49,7 @@ AUTO_QUANTIZATION_CONFIG_MAPPING = {
     "gguf": GGUFQuantizationConfig,
     "quanto": QuantoConfig,
     "torchao": TorchAoConfig,
+    "modelopt": NVIDIAModelOptConfig,
 }
 
 
@@ -57,7 +60,7 @@ class DiffusersAutoQuantizer:
     """
 
     @classmethod
-    def from_dict(cls, quantization_config_dict: Dict):
+    def from_dict(cls, quantization_config_dict: dict):
         quant_method = quantization_config_dict.get("quant_method", None)
         # We need a special care for bnb models to make sure everything is BC ..
         if quantization_config_dict.get("load_in_8bit", False) or quantization_config_dict.get("load_in_4bit", False):
@@ -78,7 +81,7 @@ class DiffusersAutoQuantizer:
         return target_cls.from_dict(quantization_config_dict)
 
     @classmethod
-    def from_config(cls, quantization_config: Union[QuantizationConfigMixin, Dict], **kwargs):
+    def from_config(cls, quantization_config: QuantizationConfigMixin | dict, **kwargs):
         # Convert it to a QuantizationConfig if the q_config is a dict
         if isinstance(quantization_config, dict):
             quantization_config = cls.from_dict(quantization_config)
@@ -119,8 +122,8 @@ class DiffusersAutoQuantizer:
     @classmethod
     def merge_quantization_configs(
         cls,
-        quantization_config: Union[dict, QuantizationConfigMixin],
-        quantization_config_from_args: Optional[QuantizationConfigMixin],
+        quantization_config: dict | QuantizationConfigMixin,
+        quantization_config_from_args: QuantizationConfigMixin | None,
     ):
         """
         handles situations where both quantization_config from args and quantization_config from model config are
@@ -136,6 +139,9 @@ class DiffusersAutoQuantizer:
 
         if isinstance(quantization_config, dict):
             quantization_config = cls.from_dict(quantization_config)
+
+        if isinstance(quantization_config, NVIDIAModelOptConfig):
+            quantization_config.check_model_patching()
 
         if warning_msg != "":
             warnings.warn(warning_msg)

@@ -1,4 +1,4 @@
-<!--Copyright 2024 The HuggingFace Team. All rights reserved.
+<!--Copyright 2025 The HuggingFace Team. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 the License. You may obtain a copy of the License at
@@ -60,7 +60,7 @@ export_to_video(video.frames[0], "output.mp4", fps=8)
   <tr>
     <th style="text-align: center;">Face Image</th>
     <th style="text-align: center;">Video</th>
-    <th style="text-align: center;">Description</th
+    <th style="text-align: center;">Description</th>
   </tr>
   <tr>
     <td><img src="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/consisid/consisid_image_0.png?download=true" style="height: auto; width: 600px;"></td>

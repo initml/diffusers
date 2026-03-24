@@ -1,4 +1,4 @@
-# Copyright 2024 Open AI and The HuggingFace Team. All rights reserved.
+# Copyright 2025 Open AI and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,6 @@
 
 import math
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -54,7 +53,7 @@ def posenc_nerf(x: torch.Tensor, min_deg: int = 0, max_deg: int = 15) -> torch.T
     """
     Concatenate x and its positional encodings, following NeRF.
 
-    Reference: https://arxiv.org/pdf/2210.04628.pdf
+    Reference: https://huggingface.co/papers/2210.04628
     """
     if min_deg == max_deg:
         return x
@@ -131,7 +130,7 @@ def _convert_srgb_to_linear(u: torch.Tensor):
 
 def _create_flat_edge_indices(
     flat_cube_indices: torch.Tensor,
-    grid_size: Tuple[int, int, int],
+    grid_size: tuple[int, int, int],
 ):
     num_xs = (grid_size[0] - 1) * grid_size[1] * grid_size[2]
     y_offset = num_xs
@@ -301,7 +300,7 @@ class BoundingBoxVolume(nn.Module):
         self,
         origin: torch.Tensor,
         direction: torch.Tensor,
-        t0_lower: Optional[torch.Tensor] = None,
+        t0_lower: torch.Tensor | None = None,
         epsilon=1e-6,
     ):
         """
@@ -479,7 +478,7 @@ class MeshDecoderOutput(BaseOutput):
 
     verts: torch.Tensor
     faces: torch.Tensor
-    vertex_channels: Dict[str, torch.Tensor]
+    vertex_channels: dict[str, torch.Tensor]
 
 
 class MeshDecoder(nn.Module):
@@ -742,13 +741,13 @@ class ShapEParamsProjModel(ModelMixin, ConfigMixin):
     def __init__(
         self,
         *,
-        param_names: Tuple[str] = (
+        param_names: tuple[str] = (
             "nerstf.mlp.0.weight",
             "nerstf.mlp.1.weight",
             "nerstf.mlp.2.weight",
             "nerstf.mlp.3.weight",
         ),
-        param_shapes: Tuple[Tuple[int]] = (
+        param_shapes: tuple[tuple[int]] = (
             (256, 93),
             (256, 256),
             (256, 256),
@@ -786,13 +785,13 @@ class ShapERenderer(ModelMixin, ConfigMixin):
     def __init__(
         self,
         *,
-        param_names: Tuple[str] = (
+        param_names: tuple[str] = (
             "nerstf.mlp.0.weight",
             "nerstf.mlp.1.weight",
             "nerstf.mlp.2.weight",
             "nerstf.mlp.3.weight",
         ),
-        param_shapes: Tuple[Tuple[int]] = (
+        param_shapes: tuple[tuple[int]] = (
             (256, 93),
             (256, 256),
             (256, 256),
@@ -804,7 +803,7 @@ class ShapERenderer(ModelMixin, ConfigMixin):
         n_hidden_layers: int = 6,
         act_fn: str = "swish",
         insert_direction_at: int = 4,
-        background: Tuple[float] = (
+        background: tuple[float] = (
             255.0,
             255.0,
             255.0,
@@ -953,7 +952,7 @@ class ShapERenderer(ModelMixin, ConfigMixin):
         device,
         grid_size: int = 128,
         query_batch_size: int = 4096,
-        texture_channels: Tuple = ("R", "G", "B"),
+        texture_channels: tuple = ("R", "G", "B"),
     ):
         # 1. project the parameters from the generated latents
         projected_params = self.params_proj(latents)
@@ -983,9 +982,9 @@ class ShapERenderer(ModelMixin, ConfigMixin):
         fields = torch.cat(fields, dim=1)
         fields = fields.float()
 
-        assert (
-            len(fields.shape) == 3 and fields.shape[-1] == 1
-        ), f"expected [meta_batch x inner_batch] SDF results, but got {fields.shape}"
+        assert len(fields.shape) == 3 and fields.shape[-1] == 1, (
+            f"expected [meta_batch x inner_batch] SDF results, but got {fields.shape}"
+        )
 
         fields = fields.reshape(1, *([grid_size] * 3))
 
@@ -1038,10 +1037,10 @@ class ShapERenderer(ModelMixin, ConfigMixin):
         textures = _convert_srgb_to_linear(textures)
         textures = textures.float()
 
-        # 3.3 augument the mesh with texture data
-        assert len(textures.shape) == 3 and textures.shape[-1] == len(
-            texture_channels
-        ), f"expected [meta_batch x inner_batch x texture_channels] field results, but got {textures.shape}"
+        # 3.3 augment the mesh with texture data
+        assert len(textures.shape) == 3 and textures.shape[-1] == len(texture_channels), (
+            f"expected [meta_batch x inner_batch x texture_channels] field results, but got {textures.shape}"
+        )
 
         for m, texture in zip(raw_meshes, textures):
             texture = texture[: len(m.verts)]

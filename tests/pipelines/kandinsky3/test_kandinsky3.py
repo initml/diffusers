@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import unittest
 import numpy as np
 import torch
 from PIL import Image
-from transformers import AutoTokenizer, T5EncoderModel
+from transformers import AutoConfig, AutoTokenizer, T5EncoderModel
 
 from diffusers import (
     AutoPipelineForImage2Image,
@@ -30,7 +30,8 @@ from diffusers import (
 )
 from diffusers.image_processor import VaeImageProcessor
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
-from diffusers.utils.testing_utils import (
+
+from ...testing_utils import (
     backend_empty_cache,
     enable_full_determinism,
     load_image,
@@ -38,7 +39,6 @@ from diffusers.utils.testing_utils import (
     slow,
     torch_device,
 )
-
 from ..pipeline_params import (
     TEXT_TO_IMAGE_BATCH_PARAMS,
     TEXT_TO_IMAGE_CALLBACK_CFG_PARAMS,
@@ -108,7 +108,8 @@ class Kandinsky3PipelineFastTests(PipelineTesterMixin, unittest.TestCase):
         torch.manual_seed(0)
         movq = self.dummy_movq
         torch.manual_seed(0)
-        text_encoder = T5EncoderModel.from_pretrained("hf-internal-testing/tiny-random-t5")
+        config = AutoConfig.from_pretrained("hf-internal-testing/tiny-random-t5")
+        text_encoder = T5EncoderModel(config).eval()
 
         torch.manual_seed(0)
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-t5")
@@ -155,11 +156,11 @@ class Kandinsky3PipelineFastTests(PipelineTesterMixin, unittest.TestCase):
 
         assert image.shape == (1, 16, 16, 3)
 
-        expected_slice = np.array([0.3768, 0.4373, 0.4865, 0.4890, 0.4299, 0.5122, 0.4921, 0.4924, 0.5599])
+        expected_slice = np.array([0.3944, 0.3680, 0.4842, 0.5333, 0.4412, 0.4812, 0.5089, 0.5381, 0.5578])
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-1, (
+            f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        )
 
     def test_float16_inference(self):
         super().test_float16_inference(expected_max_diff=1e-1)

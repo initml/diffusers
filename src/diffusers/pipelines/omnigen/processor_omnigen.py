@@ -1,4 +1,4 @@
-# Copyright 2024 OmniGen team and The HuggingFace Team. All rights reserved.
+# Copyright 2025 OmniGen team and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,12 +13,16 @@
 # limitations under the License.
 
 import re
-from typing import Dict, List
 
 import numpy as np
 import torch
 from PIL import Image
-from torchvision import transforms
+
+from ...utils import is_torchvision_available
+
+
+if is_torchvision_available():
+    from torchvision import transforms
 
 
 def crop_image(pil_image, max_image_size):
@@ -95,13 +99,13 @@ class OmniGenMultiModalProcessor:
         image_ids = [int(s.split("|")[1].split("_")[-1]) for s in image_tags]
 
         unique_image_ids = sorted(set(image_ids))
-        assert unique_image_ids == list(
-            range(1, len(unique_image_ids) + 1)
-        ), f"image_ids must start from 1, and must be continuous int, e.g. [1, 2, 3], cannot be {unique_image_ids}"
+        assert unique_image_ids == list(range(1, len(unique_image_ids) + 1)), (
+            f"image_ids must start from 1, and must be continuous int, e.g. [1, 2, 3], cannot be {unique_image_ids}"
+        )
         # total images must be the same as the number of image tags
-        assert (
-            len(unique_image_ids) == len(input_images)
-        ), f"total images must be the same as the number of image tags, got {len(unique_image_ids)} image tags and {len(input_images)} images"
+        assert len(unique_image_ids) == len(input_images), (
+            f"total images must be the same as the number of image tags, got {len(unique_image_ids)} image tags and {len(input_images)} images"
+        )
 
         input_images = [input_images[x - 1] for x in image_ids]
 
@@ -127,8 +131,8 @@ class OmniGenMultiModalProcessor:
 
     def __call__(
         self,
-        instructions: List[str],
-        input_images: List[List[str]] = None,
+        instructions: list[str],
+        input_images: list[list[str]] = None,
         height: int = 1024,
         width: int = 1024,
         negative_prompt: str = "low quality, jpeg artifacts, ugly, duplicate, morbid, mutilated, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, mutation, deformed, blurry, dehydrated, bad anatomy, bad proportions, extra limbs, cloned face, disfigured, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers.",
@@ -136,7 +140,7 @@ class OmniGenMultiModalProcessor:
         separate_cfg_input: bool = False,
         use_input_image_size_as_output: bool = False,
         num_images_per_prompt: int = 1,
-    ) -> Dict:
+    ) -> dict:
         if isinstance(instructions, str):
             instructions = [instructions]
             input_images = [input_images]
@@ -198,7 +202,7 @@ class OmniGenCollator:
     def create_mask(self, attention_mask, num_tokens_for_output_images):
         """
         OmniGen applies causal attention to each element in the sequence, but applies bidirectional attention within
-        each image sequence References: [OmniGen](https://arxiv.org/pdf/2409.11340)
+        each image sequence References: [OmniGen](https://huggingface.co/papers/2409.11340)
         """
         extended_mask = []
         padding_images = []

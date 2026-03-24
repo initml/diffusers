@@ -1,4 +1,4 @@
-# Copyright 2024 The HuggingFace Team. All rights reserved.
+# Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 # limitations under the License.
 import math
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -25,6 +24,7 @@ from ...utils import BaseOutput
 from ...utils.accelerate_utils import apply_forward_hook
 from ...utils.torch_utils import randn_tensor
 from ..modeling_utils import ModelMixin
+from .vae import AutoencoderMixin
 
 
 class Snake1d(nn.Module):
@@ -152,7 +152,7 @@ class OobleckDiagonalGaussianDistribution(object):
         self.logvar = torch.log(self.var)
         self.deterministic = deterministic
 
-    def sample(self, generator: Optional[torch.Generator] = None) -> torch.Tensor:
+    def sample(self, generator: torch.Generator | None = None) -> torch.Tensor:
         # make sure sample is on the same device as the parameters and has same dtype
         sample = randn_tensor(
             self.mean.shape,
@@ -291,7 +291,7 @@ class OobleckDecoder(nn.Module):
         return hidden_state
 
 
-class AutoencoderOobleck(ModelMixin, ConfigMixin):
+class AutoencoderOobleck(ModelMixin, AutoencoderMixin, ConfigMixin):
     r"""
     An autoencoder for encoding waveforms into latents and decoding latent representations into waveforms. First
     introduced in Stable Audio.
@@ -302,9 +302,9 @@ class AutoencoderOobleck(ModelMixin, ConfigMixin):
     Parameters:
         encoder_hidden_size (`int`, *optional*, defaults to 128):
             Intermediate representation dimension for the encoder.
-        downsampling_ratios (`List[int]`, *optional*, defaults to `[2, 4, 4, 8, 8]`):
+        downsampling_ratios (`list[int]`, *optional*, defaults to `[2, 4, 4, 8, 8]`):
             Ratios for downsampling in the encoder. These are used in reverse order for upsampling in the decoder.
-        channel_multiples (`List[int]`, *optional*, defaults to `[1, 2, 4, 8, 16]`):
+        channel_multiples (`list[int]`, *optional*, defaults to `[1, 2, 4, 8, 16]`):
             Multiples used to determine the hidden sizes of the hidden layers.
         decoder_channels (`int`, *optional*, defaults to 128):
             Intermediate representation dimension for the decoder.
@@ -356,24 +356,10 @@ class AutoencoderOobleck(ModelMixin, ConfigMixin):
 
         self.use_slicing = False
 
-    def enable_slicing(self):
-        r"""
-        Enable sliced VAE decoding. When this option is enabled, the VAE will split the input tensor in slices to
-        compute decoding in several steps. This is useful to save some memory and allow larger batch sizes.
-        """
-        self.use_slicing = True
-
-    def disable_slicing(self):
-        r"""
-        Disable sliced VAE decoding. If `enable_slicing` was previously enabled, this method will go back to computing
-        decoding in one step.
-        """
-        self.use_slicing = False
-
     @apply_forward_hook
     def encode(
         self, x: torch.Tensor, return_dict: bool = True
-    ) -> Union[AutoencoderOobleckOutput, Tuple[OobleckDiagonalGaussianDistribution]]:
+    ) -> AutoencoderOobleckOutput | tuple[OobleckDiagonalGaussianDistribution]:
         """
         Encode a batch of images into latents.
 
@@ -399,7 +385,7 @@ class AutoencoderOobleck(ModelMixin, ConfigMixin):
 
         return AutoencoderOobleckOutput(latent_dist=posterior)
 
-    def _decode(self, z: torch.Tensor, return_dict: bool = True) -> Union[OobleckDecoderOutput, torch.Tensor]:
+    def _decode(self, z: torch.Tensor, return_dict: bool = True) -> OobleckDecoderOutput | torch.Tensor:
         dec = self.decoder(z)
 
         if not return_dict:
@@ -410,7 +396,7 @@ class AutoencoderOobleck(ModelMixin, ConfigMixin):
     @apply_forward_hook
     def decode(
         self, z: torch.FloatTensor, return_dict: bool = True, generator=None
-    ) -> Union[OobleckDecoderOutput, torch.FloatTensor]:
+    ) -> OobleckDecoderOutput | torch.FloatTensor:
         """
         Decode a batch of images.
 
@@ -441,8 +427,8 @@ class AutoencoderOobleck(ModelMixin, ConfigMixin):
         sample: torch.Tensor,
         sample_posterior: bool = False,
         return_dict: bool = True,
-        generator: Optional[torch.Generator] = None,
-    ) -> Union[OobleckDecoderOutput, torch.Tensor]:
+        generator: torch.Generator | None = None,
+    ) -> OobleckDecoderOutput | torch.Tensor:
         r"""
         Args:
             sample (`torch.Tensor`): Input sample.

@@ -1,6 +1,6 @@
 import inspect
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Union
+from typing import Callable
 
 import numpy as np
 import PIL.Image
@@ -28,7 +28,7 @@ from ...utils import (
 )
 from ...utils.outputs import BaseOutput
 from ...utils.torch_utils import randn_tensor
-from ..pipeline_utils import DiffusionPipeline
+from ..pipeline_utils import DeprecatedPipelineMixin, DiffusionPipeline
 from .modeling_text_decoder import UniDiffuserTextDecoder
 from .modeling_uvit import UniDiffuserModel
 
@@ -50,19 +50,19 @@ class ImageTextPipelineOutput(BaseOutput):
     Output class for joint image-text pipelines.
 
     Args:
-        images (`List[PIL.Image.Image]` or `np.ndarray`)
-            List of denoised PIL images of length `batch_size` or NumPy array of shape `(batch_size, height, width,
+        images (`list[PIL.Image.Image]` or `np.ndarray`)
+            list of denoised PIL images of length `batch_size` or NumPy array of shape `(batch_size, height, width,
             num_channels)`.
-        text (`List[str]` or `List[List[str]]`)
-            List of generated text strings of length `batch_size` or a list of list of strings whose outer list has
+        text (`list[str]` or `list[list[str]]`)
+            list of generated text strings of length `batch_size` or a list of list of strings whose outer list has
             length `batch_size`.
     """
 
-    images: Optional[Union[List[PIL.Image.Image], np.ndarray]]
-    text: Optional[Union[List[str], List[List[str]]]]
+    images: list[PIL.Image.Image] | np.ndarray | None
+    text: list[str] | list[list[str]] | None
 
 
-class UniDiffuserPipeline(DiffusionPipeline):
+class UniDiffuserPipeline(DeprecatedPipelineMixin, DiffusionPipeline):
     r"""
     Pipeline for a bimodal image-text model which supports unconditional text and image generation, text-conditioned
     image generation, image-conditioned text generation, and joint image-text generation.
@@ -96,6 +96,7 @@ class UniDiffuserPipeline(DiffusionPipeline):
             original UniDiffuser paper uses the [`DPMSolverMultistepScheduler`] scheduler.
     """
 
+    _last_supported_version = "0.33.1"
     # TODO: support for moving submodules for components with enable_model_cpu_offload
     model_cpu_offload_seq = "text_encoder->image_encoder->unet->vae->text_decoder"
 
@@ -153,7 +154,7 @@ class UniDiffuserPipeline(DiffusionPipeline):
     def prepare_extra_step_kwargs(self, generator, eta):
         # prepare extra kwargs for the scheduler step, since not all schedulers have the same signature
         # eta (η) is only used with the DDIMScheduler, it will be ignored for other schedulers.
-        # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
+        # eta corresponds to η in DDIM paper: https://huggingface.co/papers/2010.02502
         # and should be between [0, 1]
 
         accepts_eta = "eta" in set(inspect.signature(self.scheduler.step).parameters.keys())
@@ -231,6 +232,12 @@ class UniDiffuserPipeline(DiffusionPipeline):
         Enable sliced VAE decoding. When this option is enabled, the VAE will split the input tensor in slices to
         compute decoding in several steps. This is useful to save some memory and allow larger batch sizes.
         """
+        depr_message = f"Calling `enable_vae_slicing()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.enable_slicing()`."
+        deprecate(
+            "enable_vae_slicing",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.enable_slicing()
 
     # Copied from diffusers.pipelines.pipeline_utils.StableDiffusionMixin.disable_vae_slicing
@@ -239,6 +246,12 @@ class UniDiffuserPipeline(DiffusionPipeline):
         Disable sliced VAE decoding. If `enable_vae_slicing` was previously enabled, this method will go back to
         computing decoding in one step.
         """
+        depr_message = f"Calling `disable_vae_slicing()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.disable_slicing()`."
+        deprecate(
+            "disable_vae_slicing",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.disable_slicing()
 
     # Copied from diffusers.pipelines.pipeline_utils.StableDiffusionMixin.enable_vae_tiling
@@ -248,6 +261,12 @@ class UniDiffuserPipeline(DiffusionPipeline):
         compute decoding and encoding in several steps. This is useful for saving a large amount of memory and to allow
         processing larger images.
         """
+        depr_message = f"Calling `enable_vae_tiling()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.enable_tiling()`."
+        deprecate(
+            "enable_vae_tiling",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.enable_tiling()
 
     # Copied from diffusers.pipelines.pipeline_utils.StableDiffusionMixin.disable_vae_tiling
@@ -256,6 +275,12 @@ class UniDiffuserPipeline(DiffusionPipeline):
         Disable tiled VAE decoding. If `enable_vae_tiling` was previously enabled, this method will go back to
         computing decoding in one step.
         """
+        depr_message = f"Calling `disable_vae_tiling()` on a `{self.__class__.__name__}` is deprecated and this method will be removed in a future version. Please use `pipe.vae.disable_tiling()`."
+        deprecate(
+            "disable_vae_tiling",
+            "0.40.0",
+            depr_message,
+        )
         self.vae.disable_tiling()
 
     # Functions to manually set the mode
@@ -367,9 +392,9 @@ class UniDiffuserPipeline(DiffusionPipeline):
         num_images_per_prompt,
         do_classifier_free_guidance,
         negative_prompt=None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        lora_scale: Optional[float] = None,
+        prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        lora_scale: float | None = None,
         **kwargs,
     ):
         deprecation_message = "`_encode_prompt()` is deprecated and it will be removed in a future version. Use `encode_prompt()` instead. Also, be aware that the output format changed from a concatenated tensor to a tuple."
@@ -400,16 +425,16 @@ class UniDiffuserPipeline(DiffusionPipeline):
         num_images_per_prompt,
         do_classifier_free_guidance,
         negative_prompt=None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        lora_scale: Optional[float] = None,
-        clip_skip: Optional[int] = None,
+        prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        lora_scale: float | None = None,
+        clip_skip: int | None = None,
     ):
         r"""
         Encodes the prompt into text encoder hidden states.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 prompt to be encoded
             device: (`torch.device`):
                 torch device
@@ -417,7 +442,7 @@ class UniDiffuserPipeline(DiffusionPipeline):
                 number of images that should be generated per prompt
             do_classifier_free_guidance (`bool`):
                 whether to use classifier free guidance or not
-            negative_prompt (`str` or `List[str]`, *optional*):
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts not to guide the image generation. If not defined, one has to pass
                 `negative_prompt_embeds` instead. Ignored when not using guidance (i.e., ignored if `guidance_scale` is
                 less than `1`).
@@ -516,7 +541,7 @@ class UniDiffuserPipeline(DiffusionPipeline):
 
         # get unconditional embeddings for classifier free guidance
         if do_classifier_free_guidance and negative_prompt_embeds is None:
-            uncond_tokens: List[str]
+            uncond_tokens: list[str]
             if negative_prompt is None:
                 uncond_tokens = [""] * batch_size
             elif prompt is not None and type(prompt) is not type(negative_prompt):
@@ -803,7 +828,7 @@ class UniDiffuserPipeline(DiffusionPipeline):
 
     def _combine(self, img_vae, img_clip):
         r"""
-        Combines a latent iamge img_vae of shape (B, C, H, W) and a CLIP-embedded image img_clip of shape (B, 1,
+        Combines a latent image img_vae of shape (B, C, H, W) and a CLIP-embedded image img_clip of shape (B, 1,
         clip_img_dim) into a single tensor of shape (B, C * H * W + clip_img_dim).
         """
         img_vae = torch.reshape(img_vae, (img_vae.shape[0], -1))
@@ -1094,34 +1119,34 @@ class UniDiffuserPipeline(DiffusionPipeline):
     @torch.no_grad()
     def __call__(
         self,
-        prompt: Optional[Union[str, List[str]]] = None,
-        image: Optional[Union[torch.Tensor, PIL.Image.Image]] = None,
-        height: Optional[int] = None,
-        width: Optional[int] = None,
-        data_type: Optional[int] = 1,
+        prompt: str | list[str] | None = None,
+        image: torch.Tensor | PIL.Image.Image | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        data_type: int | None = 1,
         num_inference_steps: int = 50,
         guidance_scale: float = 8.0,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        num_images_per_prompt: Optional[int] = 1,
-        num_prompts_per_image: Optional[int] = 1,
+        negative_prompt: str | list[str] | None = None,
+        num_images_per_prompt: int | None = 1,
+        num_prompts_per_image: int | None = 1,
         eta: float = 0.0,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-        latents: Optional[torch.Tensor] = None,
-        prompt_latents: Optional[torch.Tensor] = None,
-        vae_latents: Optional[torch.Tensor] = None,
-        clip_latents: Optional[torch.Tensor] = None,
-        prompt_embeds: Optional[torch.Tensor] = None,
-        negative_prompt_embeds: Optional[torch.Tensor] = None,
-        output_type: Optional[str] = "pil",
+        generator: torch.Generator | list[torch.Generator] | None = None,
+        latents: torch.Tensor | None = None,
+        prompt_latents: torch.Tensor | None = None,
+        vae_latents: torch.Tensor | None = None,
+        clip_latents: torch.Tensor | None = None,
+        prompt_embeds: torch.Tensor | None = None,
+        negative_prompt_embeds: torch.Tensor | None = None,
+        output_type: str | None = "pil",
         return_dict: bool = True,
-        callback: Optional[Callable[[int, int, torch.Tensor], None]] = None,
+        callback: Callable[[int, int, torch.Tensor], None] | None = None,
         callback_steps: int = 1,
     ):
         r"""
         The call function to the pipeline for generation.
 
         Args:
-            prompt (`str` or `List[str]`, *optional*):
+            prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide image generation. If not defined, you need to pass `prompt_embeds`.
                 Required for text-conditioned image generation (`text2img`) mode.
             image (`torch.Tensor` or `PIL.Image.Image`, *optional*):
@@ -1141,7 +1166,7 @@ class UniDiffuserPipeline(DiffusionPipeline):
             guidance_scale (`float`, *optional*, defaults to 8.0):
                 A higher guidance scale value encourages the model to generate images closely linked to the text
                 `prompt` at the expense of lower image quality. Guidance scale is enabled when `guidance_scale > 1`.
-            negative_prompt (`str` or `List[str]`, *optional*):
+            negative_prompt (`str` or `list[str]`, *optional*):
                 The prompt or prompts to guide what to not include in image generation. If not defined, you need to
                 pass `negative_prompt_embeds` instead. Ignored when not using guidance (`guidance_scale < 1`). Used in
                 text-conditioned image generation (`text2img`) mode.
@@ -1154,9 +1179,9 @@ class UniDiffuserPipeline(DiffusionPipeline):
                 `text` mode. If the mode is joint and both `num_images_per_prompt` and `num_prompts_per_image` are
                 supplied, `min(num_images_per_prompt, num_prompts_per_image)` samples are generated.
             eta (`float`, *optional*, defaults to 0.0):
-                Corresponds to parameter eta (η) from the [DDIM](https://arxiv.org/abs/2010.02502) paper. Only applies
-                to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
+                Corresponds to parameter eta (η) from the [DDIM](https://huggingface.co/papers/2010.02502) paper. Only
+                applies to the [`~schedulers.DDIMScheduler`], and is ignored in other schedulers.
+            generator (`torch.Generator` or `list[torch.Generator]`, *optional*):
                 A [`torch.Generator`](https://pytorch.org/docs/stable/generated/torch.Generator.html) to make
                 generation deterministic.
             latents (`torch.Tensor`, *optional*):
@@ -1243,7 +1268,7 @@ class UniDiffuserPipeline(DiffusionPipeline):
         reduce_text_emb_dim = self.text_intermediate_dim < self.text_encoder_hidden_size or self.mode != "text2img"
 
         # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
-        # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
+        # of the Imagen paper: https://huggingface.co/papers/2205.11487 . `guidance_scale = 1`
         # corresponds to doing no classifier free guidance.
         # Note that this differs from the formulation in the unidiffusers paper!
         do_classifier_free_guidance = guidance_scale > 1.0

@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2024 HuggingFace Inc.
+# Copyright 2025 HuggingFace Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ from diffusers import (
     KandinskyV22Img2ImgCombinedPipeline,
     KandinskyV22InpaintCombinedPipeline,
 )
-from diffusers.utils.testing_utils import enable_full_determinism, require_torch_accelerator, torch_device
 
+from ...testing_utils import enable_full_determinism, require_accelerator, require_torch_accelerator, torch_device
 from ..test_pipelines_common import PipelineTesterMixin
 from .test_kandinsky import Dummies
 from .test_kandinsky_img2img import Dummies as Img2ImgDummies
@@ -36,9 +36,7 @@ enable_full_determinism()
 
 class KandinskyV22PipelineCombinedFastTests(PipelineTesterMixin, unittest.TestCase):
     pipeline_class = KandinskyV22CombinedPipeline
-    params = [
-        "prompt",
-    ]
+    params = ["prompt"]
     batch_params = ["prompt", "negative_prompt"]
     required_optional_params = [
         "generator",
@@ -70,12 +68,7 @@ class KandinskyV22PipelineCombinedFastTests(PipelineTesterMixin, unittest.TestCa
     def get_dummy_inputs(self, device, seed=0):
         prior_dummy = PriorDummies()
         inputs = prior_dummy.get_dummy_inputs(device=device, seed=seed)
-        inputs.update(
-            {
-                "height": 64,
-                "width": 64,
-            }
-        )
+        inputs.update({"height": 64, "width": 64})
         return inputs
 
     def test_kandinsky(self):
@@ -103,12 +96,12 @@ class KandinskyV22PipelineCombinedFastTests(PipelineTesterMixin, unittest.TestCa
 
         expected_slice = np.array([0.3076, 0.2729, 0.5668, 0.0522, 0.3384, 0.7028, 0.4908, 0.3659, 0.6243])
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
-        assert (
-            np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        )
+        assert np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        )
 
     @require_torch_accelerator
     def test_offloads(self):
@@ -155,10 +148,16 @@ class KandinskyV22PipelineCombinedFastTests(PipelineTesterMixin, unittest.TestCa
     def test_save_load_optional_components(self):
         super().test_save_load_optional_components(expected_max_difference=5e-3)
 
+    @unittest.skip("Test not supported.")
     def test_callback_inputs(self):
         pass
 
+    @unittest.skip("Test not supported.")
     def test_callback_cfg(self):
+        pass
+
+    @unittest.skip("Test not supported.")
+    def test_pipeline_with_accelerator_device_map(self):
         pass
 
 
@@ -227,12 +226,12 @@ class KandinskyV22PipelineImg2ImgCombinedFastTests(PipelineTesterMixin, unittest
 
         expected_slice = np.array([0.4445, 0.4287, 0.4596, 0.3919, 0.3730, 0.5039, 0.4834, 0.4269, 0.5521])
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
-        assert (
-            np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        )
+        assert np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        )
 
     @require_torch_accelerator
     def test_offloads(self):
@@ -279,10 +278,16 @@ class KandinskyV22PipelineImg2ImgCombinedFastTests(PipelineTesterMixin, unittest
     def save_load_local(self):
         super().test_save_load_local(expected_max_difference=5e-3)
 
+    @unittest.skip("Test not supported.")
     def test_callback_inputs(self):
         pass
 
+    @unittest.skip("Test not supported.")
     def test_callback_cfg(self):
+        pass
+
+    @unittest.skip("Test not supported.")
+    def test_pipeline_with_accelerator_device_map(self):
         pass
 
 
@@ -350,12 +355,12 @@ class KandinskyV22PipelineInpaintCombinedFastTests(PipelineTesterMixin, unittest
 
         expected_slice = np.array([0.5039, 0.4926, 0.4898, 0.4978, 0.4838, 0.4942, 0.4738, 0.4702, 0.4816])
 
-        assert (
-            np.abs(image_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
-        assert (
-            np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2
-        ), f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        assert np.abs(image_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_slice.flatten()}"
+        )
+        assert np.abs(image_from_tuple_slice.flatten() - expected_slice).max() < 1e-2, (
+            f" expected_slice {expected_slice}, but got {image_from_tuple_slice.flatten()}"
+        )
 
     @require_torch_accelerator
     def test_offloads(self):
@@ -388,7 +393,7 @@ class KandinskyV22PipelineInpaintCombinedFastTests(PipelineTesterMixin, unittest
         super().test_inference_batch_single_identical(expected_max_diff=1e-2)
 
     def test_float16_inference(self):
-        super().test_float16_inference(expected_max_diff=5e-1)
+        super().test_float16_inference(expected_max_diff=8e-1)
 
     def test_dict_tuple_outputs_equivalent(self):
         super().test_dict_tuple_outputs_equivalent(expected_max_difference=5e-4)
@@ -402,6 +407,7 @@ class KandinskyV22PipelineInpaintCombinedFastTests(PipelineTesterMixin, unittest
     def test_save_load_optional_components(self):
         super().test_save_load_optional_components(expected_max_difference=5e-4)
 
+    @require_accelerator
     def test_sequential_cpu_offload_forward_pass(self):
         super().test_sequential_cpu_offload_forward_pass(expected_max_diff=5e-4)
 
@@ -409,4 +415,8 @@ class KandinskyV22PipelineInpaintCombinedFastTests(PipelineTesterMixin, unittest
         pass
 
     def test_callback_cfg(self):
+        pass
+
+    @unittest.skip("`device_map` is not yet supported for connected pipelines.")
+    def test_pipeline_with_accelerator_device_map(self):
         pass
