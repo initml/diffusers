@@ -25,7 +25,6 @@ from .utils import (
     is_transformers_version,
 )
 
-
 # Lazy Import based on
 # https://github.com/huggingface/transformers/blob/main/src/transformers/__init__.py
 
@@ -63,7 +62,11 @@ _import_structure = {
 }
 
 try:
-    if not is_torch_available() and not is_accelerate_available() and not is_bitsandbytes_available():
+    if (
+        not is_torch_available()
+        and not is_accelerate_available()
+        and not is_bitsandbytes_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from .utils import dummy_bitsandbytes_objects
@@ -75,7 +78,11 @@ else:
     _import_structure["quantizers.quantization_config"].append("BitsAndBytesConfig")
 
 try:
-    if not is_torch_available() and not is_accelerate_available() and not is_gguf_available():
+    if (
+        not is_torch_available()
+        and not is_accelerate_available()
+        and not is_gguf_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from .utils import dummy_gguf_objects
@@ -87,7 +94,11 @@ else:
     _import_structure["quantizers.quantization_config"].append("GGUFQuantizationConfig")
 
 try:
-    if not is_torch_available() and not is_accelerate_available() and not is_torchao_available():
+    if (
+        not is_torch_available()
+        and not is_accelerate_available()
+        and not is_torchao_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from .utils import dummy_torchao_objects
@@ -99,7 +110,11 @@ else:
     _import_structure["quantizers.quantization_config"].append("TorchAoConfig")
 
 try:
-    if not is_torch_available() and not is_accelerate_available() and not is_optimum_quanto_available():
+    if (
+        not is_torch_available()
+        and not is_accelerate_available()
+        and not is_optimum_quanto_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from .utils import dummy_optimum_quanto_objects
@@ -111,7 +126,11 @@ else:
     _import_structure["quantizers.quantization_config"].append("QuantoConfig")
 
 try:
-    if not is_torch_available() and not is_accelerate_available() and not is_nvidia_modelopt_available():
+    if (
+        not is_torch_available()
+        and not is_accelerate_available()
+        and not is_nvidia_modelopt_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from .utils import dummy_nvidia_modelopt_objects
@@ -141,7 +160,9 @@ try:
 except OptionalDependencyNotAvailable:
     from .utils import dummy_pt_objects  # noqa F403
 
-    _import_structure["utils.dummy_pt_objects"] = [name for name in dir(dummy_pt_objects) if not name.startswith("_")]
+    _import_structure["utils.dummy_pt_objects"] = [
+        name for name in dir(dummy_pt_objects) if not name.startswith("_")
+    ]
 
 else:
     _import_structure["guiders"].extend(
@@ -238,6 +259,7 @@ else:
             "ErnieImageTransformer2DModel",
             "Flux2Transformer2DModel",
             "FluxControlNetModel",
+            "Flux2ControlNetModel",
             "FluxMultiControlNetModel",
             "FluxTransformer2DModel",
             "GlmImageTransformer2DModel",
@@ -423,11 +445,15 @@ except OptionalDependencyNotAvailable:
     from .utils import dummy_torch_and_torchsde_objects  # noqa F403
 
     _import_structure["utils.dummy_torch_and_torchsde_objects"] = [
-        name for name in dir(dummy_torch_and_torchsde_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_torch_and_torchsde_objects)
+        if not name.startswith("_")
     ]
 
 else:
-    _import_structure["schedulers"].extend(["CosineDPMSolverMultistepScheduler", "DPMSolverSDEScheduler"])
+    _import_structure["schedulers"].extend(
+        ["CosineDPMSolverMultistepScheduler", "DPMSolverSDEScheduler"]
+    )
 
 try:
     if not (is_torch_available() and is_transformers_available()):
@@ -436,7 +462,9 @@ except OptionalDependencyNotAvailable:
     from .utils import dummy_torch_and_transformers_objects  # noqa F403
 
     _import_structure["utils.dummy_torch_and_transformers_objects"] = [
-        name for name in dir(dummy_torch_and_transformers_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_torch_and_transformers_objects)
+        if not name.startswith("_")
     ]
 
 else:
@@ -759,39 +787,59 @@ else:
 
 
 try:
-    if not (is_torch_available() and is_transformers_available() and is_opencv_available()):
+    if not (
+        is_torch_available() and is_transformers_available() and is_opencv_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from .utils import dummy_torch_and_transformers_and_opencv_objects  # noqa F403
 
     _import_structure["utils.dummy_torch_and_transformers_and_opencv_objects"] = [
-        name for name in dir(dummy_torch_and_transformers_and_opencv_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_torch_and_transformers_and_opencv_objects)
+        if not name.startswith("_")
     ]
 
 else:
     _import_structure["pipelines"].extend(["ConsisIDPipeline"])
 
 try:
-    if not (is_torch_available() and is_transformers_available() and is_sentencepiece_available()):
+    if not (
+        is_torch_available()
+        and is_transformers_available()
+        and is_sentencepiece_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
-    from .utils import dummy_torch_and_transformers_and_sentencepiece_objects  # noqa F403
+    from .utils import (  # noqa F403
+        dummy_torch_and_transformers_and_sentencepiece_objects,
+    )
 
-    _import_structure["utils.dummy_torch_and_transformers_and_sentencepiece_objects"] = [
-        name for name in dir(dummy_torch_and_transformers_and_sentencepiece_objects) if not name.startswith("_")
+    _import_structure[
+        "utils.dummy_torch_and_transformers_and_sentencepiece_objects"
+    ] = [
+        name
+        for name in dir(dummy_torch_and_transformers_and_sentencepiece_objects)
+        if not name.startswith("_")
     ]
 
 else:
-    _import_structure["pipelines"].extend(["KolorsImg2ImgPipeline", "KolorsPAGPipeline", "KolorsPipeline"])
+    _import_structure["pipelines"].extend(
+        ["KolorsImg2ImgPipeline", "KolorsPAGPipeline", "KolorsPipeline"]
+    )
 
 try:
-    if not (is_torch_available() and is_transformers_available() and is_onnx_available()):
+    if not (
+        is_torch_available() and is_transformers_available() and is_onnx_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from .utils import dummy_torch_and_transformers_and_onnx_objects  # noqa F403
 
     _import_structure["utils.dummy_torch_and_transformers_and_onnx_objects"] = [
-        name for name in dir(dummy_torch_and_transformers_and_onnx_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_torch_and_transformers_and_onnx_objects)
+        if not name.startswith("_")
     ]
 
 else:
@@ -813,20 +861,26 @@ except OptionalDependencyNotAvailable:
     from .utils import dummy_torch_and_librosa_objects  # noqa F403
 
     _import_structure["utils.dummy_torch_and_librosa_objects"] = [
-        name for name in dir(dummy_torch_and_librosa_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_torch_and_librosa_objects)
+        if not name.startswith("_")
     ]
 
 else:
     _import_structure["pipelines"].extend(["AudioDiffusionPipeline", "Mel"])
 
 try:
-    if not (is_transformers_available() and is_torch_available() and is_note_seq_available()):
+    if not (
+        is_transformers_available() and is_torch_available() and is_note_seq_available()
+    ):
         raise OptionalDependencyNotAvailable()
 except OptionalDependencyNotAvailable:
     from .utils import dummy_transformers_and_torch_and_note_seq_objects  # noqa F403
 
     _import_structure["utils.dummy_transformers_and_torch_and_note_seq_objects"] = [
-        name for name in dir(dummy_transformers_and_torch_and_note_seq_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_transformers_and_torch_and_note_seq_objects)
+        if not name.startswith("_")
     ]
 
 
@@ -847,7 +901,9 @@ except OptionalDependencyNotAvailable:
 else:
     _import_structure["models.controlnets.controlnet_flax"] = ["FlaxControlNetModel"]
     _import_structure["models.modeling_flax_utils"] = ["FlaxModelMixin"]
-    _import_structure["models.unets.unet_2d_condition_flax"] = ["FlaxUNet2DConditionModel"]
+    _import_structure["models.unets.unet_2d_condition_flax"] = [
+        "FlaxUNet2DConditionModel"
+    ]
     _import_structure["models.vae_flax"] = ["FlaxAutoencoderKL"]
     _import_structure["pipelines"].extend(["FlaxDiffusionPipeline"])
     _import_structure["schedulers"].extend(
@@ -872,7 +928,9 @@ except OptionalDependencyNotAvailable:
     from .utils import dummy_flax_and_transformers_objects  # noqa F403
 
     _import_structure["utils.dummy_flax_and_transformers_objects"] = [
-        name for name in dir(dummy_flax_and_transformers_objects) if not name.startswith("_")
+        name
+        for name in dir(dummy_flax_and_transformers_objects)
+        if not name.startswith("_")
     ]
 
 
@@ -1046,6 +1104,7 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
             DiTTransformer2DModel,
             EasyAnimateTransformer3DModel,
             ErnieImageTransformer2DModel,
+            Flux2ControlNetModel,
             Flux2Transformer2DModel,
             FluxControlNetModel,
             FluxMultiControlNetModel,
@@ -1540,7 +1599,11 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
         )
 
     try:
-        if not (is_torch_available() and is_transformers_available() and is_sentencepiece_available()):
+        if not (
+            is_torch_available()
+            and is_transformers_available()
+            and is_sentencepiece_available()
+        ):
             raise OptionalDependencyNotAvailable()
     except OptionalDependencyNotAvailable:
         from .utils.dummy_torch_and_transformers_and_sentencepiece_objects import *  # noqa F403
@@ -1548,7 +1611,11 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
         from .pipelines import KolorsImg2ImgPipeline, KolorsPAGPipeline, KolorsPipeline
 
     try:
-        if not (is_torch_available() and is_transformers_available() and is_opencv_available()):
+        if not (
+            is_torch_available()
+            and is_transformers_available()
+            and is_opencv_available()
+        ):
             raise OptionalDependencyNotAvailable()
     except OptionalDependencyNotAvailable:
         from .utils.dummy_torch_and_transformers_and_opencv_objects import *  # noqa F403
@@ -1556,7 +1623,9 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
         from .pipelines import ConsisIDPipeline
 
     try:
-        if not (is_torch_available() and is_transformers_available() and is_onnx_available()):
+        if not (
+            is_torch_available() and is_transformers_available() and is_onnx_available()
+        ):
             raise OptionalDependencyNotAvailable()
     except OptionalDependencyNotAvailable:
         from .utils.dummy_torch_and_transformers_and_onnx_objects import *  # noqa F403
@@ -1579,7 +1648,11 @@ if TYPE_CHECKING or DIFFUSERS_SLOW_IMPORT:
         from .pipelines import AudioDiffusionPipeline, Mel
 
     try:
-        if not (is_transformers_available() and is_torch_available() and is_note_seq_available()):
+        if not (
+            is_transformers_available()
+            and is_torch_available()
+            and is_note_seq_available()
+        ):
             raise OptionalDependencyNotAvailable()
     except OptionalDependencyNotAvailable:
         from .utils.dummy_transformers_and_torch_and_note_seq_objects import *  # noqa F403

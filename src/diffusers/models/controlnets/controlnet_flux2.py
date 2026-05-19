@@ -31,6 +31,7 @@ from .._modeling_parallel import ContextParallelInput, ContextParallelOutput
 from ..attention import AttentionMixin, AttentionModuleMixin
 from ..attention_dispatch import dispatch_attention_fn
 from ..cache_utils import CacheMixin
+from ..controlnets.controlnet import ControlNetConditioningEmbedding, zero_module
 from ..embeddings import (
     TimestepEmbedding,
     Timesteps,
@@ -44,19 +45,9 @@ logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
 @dataclass
-class Flux2Transformer2DModelOutput(BaseOutput):
-    """
-    The output of [`Flux2Transformer2DModel`].
-
-    Args:
-        sample (`torch.Tensor` of shape `(batch_size, num_channels, height, width)`):
-            The hidden states output conditioned on the `encoder_hidden_states` input.
-        kv_cache (`Flux2KVCache`, *optional*):
-            The populated KV cache for reference image tokens. Only returned when `kv_cache_mode="extract"`.
-    """
-
-    sample: "torch.Tensor"  # noqa: F821
-    kv_cache: "Flux2KVCache | None" = None
+class Flux2ControlNetOutput(BaseOutput):
+    controlnet_block_samples: tuple[torch.Tensor]
+    controlnet_single_block_samples: tuple[torch.Tensor]
 
 
 class Flux2KVLayerCache:
@@ -1163,7 +1154,7 @@ class Flux2Modulation(nn.Module):
         return tuple(mod_params[3 * i : 3 * (i + 1)] for i in range(mod_param_sets))
 
 
-class Flux2Transformer2DModel(
+class Flux2ControlNetModel(
     ModelMixin,
     ConfigMixin,
     PeftAdapterMixin,
@@ -1321,32 +1312,55 @@ class Flux2Transformer2DModel(
 
         self.gradient_checkpointing = False
 
+        # Controlnet for double stream transformer blocks
+        self.controlnet_blocks = nn.ModuleList([])
+        for _ in range(len(self.transformer_blocks)):
+            self.controlnet_blocks.append(
+                zero_module(nn.Linear(self.inner_dim, self.inner_dim))
+            )
+
+        # Controlnet for single stream transformer blocks
+        self.controlnet_single_blocks = nn.ModuleList([])
+        for _ in range(len(self.single_transformer_blocks)):
+            self.controlnet_single_blocks.append(
+                zero_module(nn.Linear(self.inner_dim, self.inner_dim))
+            )
+
+        # Controlnet for the input image
+        self.controlnet_x_embedder = zero_module(
+            torch.nn.Linear(in_channels, self.inner_dim)
+        )
+
     _skip_keys = ["kv_cache"]
 
     @apply_lora_scale("joint_attention_kwargs")
     def forward(
         self,
         hidden_states: torch.Tensor,
+        controlnet_cond: torch.Tensor,
+        conditioning_scale: float = 1.0,
         encoder_hidden_states: torch.Tensor = None,
         timestep: torch.LongTensor = None,
         img_ids: torch.Tensor = None,
         txt_ids: torch.Tensor = None,
         guidance: torch.Tensor = None,
         joint_attention_kwargs: dict[str, Any] | None = None,
-        controlnet_block_samples=None,
-        controlnet_single_block_samples=None,
         return_dict: bool = True,
         kv_cache: "Flux2KVCache | None" = None,
         kv_cache_mode: str | None = None,
         num_ref_tokens: int = 0,
         ref_fixed_timestep: float = 0.0,
-    ) -> torch.Tensor | Flux2Transformer2DModelOutput:
+    ) -> Flux2ControlNetOutput | tuple:
         """
-        The [`Flux2Transformer2DModel`] forward method.
+        The [`Flux2ControlNetModel`] forward method.
 
         Args:
             hidden_states (`torch.Tensor` of shape `(batch_size, image_sequence_length, in_channels)`):
                 Input `hidden_states`.
+            controlnet_cond (`torch.Tensor`):
+                The conditional input tensor of shape `(batch_size, sequence_length, hidden_size)`.
+            conditioning_scale (`float`, defaults to `1.0`):
+                The scale factor for ControlNet outputs.
             encoder_hidden_states (`torch.Tensor` of shape `(batch_size, text_sequence_length, joint_attention_dim)`):
                 Conditional embeddings (embeddings computed from the input conditions such as prompts) to use.
             timestep (`torch.LongTensor`):
@@ -1355,10 +1369,6 @@ class Flux2Transformer2DModel(
                 A kwargs dictionary that if specified is passed along to the `AttentionProcessor` as defined under
                 `self.processor` in
                 [diffusers.models.attention_processor](https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py).
-            controlnet_block_samples: (`list` of `torch.Tensor`):
-                A list of tensors that if specified are added to the residuals of transformer blocks.
-            controlnet_single_block_samples: (`list` of `torch.Tensor`):
-                A list of tensors that if specified are added to the residuals of single stream transformer blocks.
             return_dict (`bool`, *optional*, defaults to `True`):
                 Whether or not to return a [`~models.transformer_2d.Transformer2DModelOutput`] instead of a plain
                 tuple.
@@ -1375,9 +1385,8 @@ class Flux2Transformer2DModel(
                 Fixed timestep for reference token modulation (only used when `kv_cache_mode="extract"`).
 
         Returns:
-            If `return_dict` is True, an [`~models.transformer_2d.Transformer2DModelOutput`] is returned, otherwise a
-            `tuple` where the first element is the sample tensor. When `kv_cache_mode="extract"`, also returns the
-            populated `Flux2KVCache`.
+            If `return_dict` is True, an [`Flux2ControlNetOutput`] is returned, otherwise a
+            `tuple` where the first element is the controlnet block samples and the second element is the controlnet single block samples.
         """
         num_txt_tokens = encoder_hidden_states.shape[1]
 
@@ -1422,6 +1431,9 @@ class Flux2Transformer2DModel(
         hidden_states = self.x_embedder(hidden_states)
         encoder_hidden_states = self.context_embedder(encoder_hidden_states)
 
+        # Add controlnet conditioning to the hidden states
+        hidden_states = hidden_states + self.controlnet_x_embedder(controlnet_cond)
+
         # 3. Calculate RoPE embeddings from image and text tokens
         if img_ids.ndim == 3:
             img_ids = img_ids[0]
@@ -1454,6 +1466,7 @@ class Flux2Transformer2DModel(
             kv_attn_kwargs = joint_attention_kwargs
 
         # 5. Double Stream Transformer Blocks
+        block_samples = ()
         for index_block, block in enumerate(self.transformer_blocks):
             if kv_cache_mode is not None and kv_cache is not None:
                 kv_attn_kwargs["kv_cache"] = kv_cache.get_double(index_block)
@@ -1479,13 +1492,7 @@ class Flux2Transformer2DModel(
                     image_rotary_emb=concat_rotary_emb,
                     joint_attention_kwargs=kv_attn_kwargs,
                 )
-
-            # Controlnet Residual for double stream transformer blocks
-            if controlnet_block_samples is not None:
-                if index_block < len(controlnet_block_samples):
-                    hidden_states = (
-                        hidden_states + controlnet_block_samples[index_block]
-                    )
+            block_samples = block_samples + (hidden_states,)
 
         # Concatenate text and image streams for single-block inference
         hidden_states = torch.cat([encoder_hidden_states, hidden_states], dim=1)
@@ -1508,6 +1515,7 @@ class Flux2Transformer2DModel(
             kv_attn_kwargs_single = kv_attn_kwargs
 
         # 6. Single Stream Transformer Blocks
+        single_block_samples = ()
         for index_block, block in enumerate(self.single_transformer_blocks):
             if kv_cache_mode is not None and kv_cache is not None:
                 kv_attn_kwargs_single["kv_cache"] = kv_cache.get_single(index_block)
@@ -1529,30 +1537,48 @@ class Flux2Transformer2DModel(
                     image_rotary_emb=concat_rotary_emb,
                     joint_attention_kwargs=kv_attn_kwargs_single,
                 )
+            single_block_samples = single_block_samples + (hidden_states,)
 
-            # Controlnet Residual for single stream transformer blocks
-            if controlnet_single_block_samples is not None:
-                if index_block < len(controlnet_single_block_samples):
-                    hidden_states = (
-                        hidden_states + controlnet_single_block_samples[index_block]
-                    )
+        # Controlnet samples for double stream transformer blocks
+        controlnet_block_samples = ()
+        for block_sample, controlnet_block in zip(
+            block_samples, self.controlnet_blocks
+        ):
+            block_sample = controlnet_block(block_sample)
+            controlnet_block_samples = controlnet_block_samples + (block_sample,)
 
-        # Remove text tokens (and ref tokens in extract mode) from concatenated stream
-        if kv_cache_mode == "extract" and num_ref_tokens > 0:
-            hidden_states = hidden_states[:, num_txt_tokens + num_ref_tokens :, ...]
-        else:
-            hidden_states = hidden_states[:, num_txt_tokens:, ...]
+        # Controlnet samples for single stream transformer blocks
+        controlnet_single_block_samples = ()
+        for single_block_sample, controlnet_block in zip(
+            single_block_samples, self.controlnet_single_blocks
+        ):
+            single_block_sample = controlnet_block(single_block_sample)
+            controlnet_single_block_samples = controlnet_single_block_samples + (
+                single_block_sample,
+            )
 
-        # 7. Output layers
-        hidden_states = self.norm_out(hidden_states, temb)
-        output = self.proj_out(hidden_states)
+        # Scaling the controlnet samples
+        controlnet_block_samples = [
+            sample * conditioning_scale for sample in controlnet_block_samples
+        ]
+        controlnet_single_block_samples = [
+            sample * conditioning_scale for sample in controlnet_single_block_samples
+        ]
 
-        if kv_cache_mode == "extract":
-            if not return_dict:
-                return (output, kv_cache)
-            return Flux2Transformer2DModelOutput(sample=output, kv_cache=kv_cache)
+        # Setting the controlnet samples to None if they are empty
+        controlnet_block_samples = (
+            None if len(controlnet_block_samples) == 0 else controlnet_block_samples
+        )
+        controlnet_single_block_samples = (
+            None
+            if len(controlnet_single_block_samples) == 0
+            else controlnet_single_block_samples
+        )
 
         if not return_dict:
-            return (output,)
+            return (controlnet_block_samples, controlnet_single_block_samples)
 
-        return Flux2Transformer2DModelOutput(sample=output)
+        return Flux2ControlNetOutput(
+            controlnet_block_samples=controlnet_block_samples,
+            controlnet_single_block_samples=controlnet_single_block_samples,
+        )
