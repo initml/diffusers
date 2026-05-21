@@ -1298,18 +1298,6 @@ class Flux2ControlNetModel(
             ]
         )
 
-        # 7. Output layers
-        self.norm_out = AdaLayerNormContinuous(
-            self.inner_dim,
-            self.inner_dim,
-            elementwise_affine=False,
-            eps=eps,
-            bias=False,
-        )
-        self.proj_out = nn.Linear(
-            self.inner_dim, patch_size * patch_size * self.out_channels, bias=False
-        )
-
         self.gradient_checkpointing = False
 
         # Controlnet for double stream transformer blocks
