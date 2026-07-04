@@ -1230,7 +1230,7 @@ class Flux2Transformer2DModel(
         self,
         patch_size: int = 1,
         in_channels: int = 128,
-        out_channels: int | None = None,
+        out_channels: int = 128,
         num_layers: int = 8,
         num_single_layers: int = 48,
         attention_head_dim: int = 128,
@@ -1244,7 +1244,7 @@ class Flux2Transformer2DModel(
         guidance_embeds: bool = True,
     ):
         super().__init__()
-        self.out_channels = out_channels or in_channels
+        self.out_channels = out_channels
         self.inner_dim = num_attention_heads * attention_head_dim
 
         # 1. Sinusoidal positional embedding for RoPE on image and text tokens
