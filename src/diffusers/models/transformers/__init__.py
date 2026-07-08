@@ -28,6 +28,7 @@ if is_torch_available():
     from .transformer_ernie_image import ErnieImageTransformer2DModel
     from .transformer_flux import FluxTransformer2DModel
     from .transformer_flux2 import Flux2Transformer2DModel
+    from .transformer_flux2 import Flux2DoubleXEmbedderTransformer2DModel
     from .transformer_glm_image import GlmImageTransformer2DModel
     from .transformer_helios import HeliosTransformer3DModel
     from .transformer_hidream_image import HiDreamImageTransformer2DModel
